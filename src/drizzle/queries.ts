@@ -6,12 +6,14 @@ import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
 	commerceAbandonedCarts,
+	commerceCompanies,
 	commerceFavorites,
 	commerceGalleryItems,
 	commerceGiftCards,
 	commerceGroupOrders,
 	commerceGroupStores,
 	commerceInventory,
+	commerceInvoices,
 	commerceOrders,
 	commerceReturnRequests,
 	commerceReviews,
@@ -36,6 +38,10 @@ export type GalleryItem = typeof commerceGalleryItems.$inferSelect;
 export type NewGalleryItem = typeof commerceGalleryItems.$inferInsert;
 export type InventoryItem = typeof commerceInventory.$inferSelect;
 export type NewInventoryItem = typeof commerceInventory.$inferInsert;
+export type Company = typeof commerceCompanies.$inferSelect;
+export type NewCompany = typeof commerceCompanies.$inferInsert;
+export type Invoice = typeof commerceInvoices.$inferSelect;
+export type NewInvoice = typeof commerceInvoices.$inferInsert;
 export type GiftCardRedemption = {
 	appliedCents: number;
 	balanceCents: number;
@@ -233,6 +239,82 @@ export const redeemGiftCard = async (
 			.where(eq(commerceGiftCards.code, card.code));
 
 	return { appliedCents: applied, balanceCents: balance };
+};
+
+// ---- B2B companies ----
+
+export const createCompany = async (db: CommerceDb, company: NewCompany) => {
+	const [created] = await db
+		.insert(commerceCompanies)
+		.values(company)
+		.returning();
+
+	return created;
+};
+
+export const listCompanies = (db: CommerceDb) =>
+	db.select().from(commerceCompanies).orderBy(desc(commerceCompanies.created_at));
+
+export const getCompany = async (db: CommerceDb, id: string) => {
+	const [company] = await db
+		.select()
+		.from(commerceCompanies)
+		.where(eq(commerceCompanies.id, id))
+		.limit(1);
+
+	return company ?? null;
+};
+
+export const updateCompany = async (
+	db: CommerceDb,
+	id: string,
+	patch: Partial<NewCompany>
+) => {
+	const [updated] = await db
+		.update(commerceCompanies)
+		.set(patch)
+		.where(eq(commerceCompanies.id, id))
+		.returning();
+
+	return updated;
+};
+
+// ---- B2B invoices ----
+
+export const createInvoice = async (db: CommerceDb, invoice: NewInvoice) => {
+	const [created] = await db
+		.insert(commerceInvoices)
+		.values(invoice)
+		.returning();
+
+	return created;
+};
+
+export const listInvoices = (db: CommerceDb) =>
+	db.select().from(commerceInvoices).orderBy(desc(commerceInvoices.created_at));
+
+export const getInvoice = async (db: CommerceDb, id: string) => {
+	const [invoice] = await db
+		.select()
+		.from(commerceInvoices)
+		.where(eq(commerceInvoices.id, id))
+		.limit(1);
+
+	return invoice ?? null;
+};
+
+export const setInvoiceStatus = async (
+	db: CommerceDb,
+	id: string,
+	status: string
+) => {
+	const [updated] = await db
+		.update(commerceInvoices)
+		.set({ status })
+		.where(eq(commerceInvoices.id, id))
+		.returning();
+
+	return updated;
 };
 
 // ---- Inventory (blank stock) ----

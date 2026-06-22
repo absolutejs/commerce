@@ -41,6 +41,43 @@ export const commerceDesigns = pgTable('designs', {
 	public: boolean().notNull().default(true)
 });
 
+// A B2B company account: net terms, tax-exempt status, PO requirement, and a
+// brand kit (saved logo URLs) for fast reorders.
+export const commerceCompanies = pgTable('companies', {
+	brand_logos: jsonb().$type<string[]>().default([]),
+	contact_email: varchar({ length: 320 }),
+	created_at: timestamp().notNull().defaultNow(),
+	id: uuid().defaultRandom().primaryKey(),
+	name: varchar({ length: 200 }).notNull(),
+	net_terms: integer().notNull().default(0),
+	notes: text(),
+	po_required: boolean().notNull().default(false),
+	tax_exempt: boolean().notNull().default(false),
+	tax_exempt_id: varchar({ length: 80 })
+});
+
+export type CommerceInvoiceLine = {
+	description: string;
+	quantity: number;
+	amountCents: number;
+};
+
+// A B2B invoice (net terms / PO / tax-exempt). `status` is draft | sent | paid.
+export const commerceInvoices = pgTable('invoices', {
+	amount_cents: integer().notNull().default(0),
+	company_id: uuid(),
+	created_at: timestamp().notNull().defaultNow(),
+	customer_email: varchar({ length: 320 }),
+	due_date: timestamp(),
+	id: uuid().defaultRandom().primaryKey(),
+	line_items: jsonb().$type<CommerceInvoiceLine[]>().default([]),
+	notes: text(),
+	number: varchar({ length: 40 }).notNull(),
+	po_number: varchar({ length: 80 }),
+	status: varchar({ length: 20 }).notNull().default('draft'),
+	tax_exempt: boolean().notNull().default(false)
+});
+
 // Discount codes. Exactly one of percent_off / amount_off (cents) is set.
 export const commerceDiscounts = pgTable('discounts', {
 	active: boolean().notNull().default(true),
@@ -231,8 +268,10 @@ export const commerceSubscribers = pgTable('subscribers', {
 // Every commerce table in one object — spread into your own Drizzle schema.
 export const commerceDrizzleSchema = {
 	abandonedCarts: commerceAbandonedCarts,
+	companies: commerceCompanies,
 	designs: commerceDesigns,
 	discounts: commerceDiscounts,
+	invoices: commerceInvoices,
 	favorites: commerceFavorites,
 	galleryItems: commerceGalleryItems,
 	giftCards: commerceGiftCards,
