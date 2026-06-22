@@ -11,6 +11,7 @@ import {
 	commerceGiftCards,
 	commerceGroupOrders,
 	commerceGroupStores,
+	commerceInventory,
 	commerceOrders,
 	commerceReturnRequests,
 	commerceReviews,
@@ -33,6 +34,8 @@ export type GroupStore = typeof commerceGroupStores.$inferSelect;
 export type NewGroupStore = typeof commerceGroupStores.$inferInsert;
 export type GalleryItem = typeof commerceGalleryItems.$inferSelect;
 export type NewGalleryItem = typeof commerceGalleryItems.$inferInsert;
+export type InventoryItem = typeof commerceInventory.$inferSelect;
+export type NewInventoryItem = typeof commerceInventory.$inferInsert;
 export type GiftCardRedemption = {
 	appliedCents: number;
 	balanceCents: number;
@@ -230,6 +233,41 @@ export const redeemGiftCard = async (
 			.where(eq(commerceGiftCards.code, card.code));
 
 	return { appliedCents: applied, balanceCents: balance };
+};
+
+// ---- Inventory (blank stock) ----
+
+export const listInventory = (db: CommerceDb) =>
+	db.select().from(commerceInventory).orderBy(desc(commerceInventory.created_at));
+
+export const addInventoryItem = async (
+	db: CommerceDb,
+	item: NewInventoryItem
+) => {
+	const [created] = await db
+		.insert(commerceInventory)
+		.values(item)
+		.returning();
+
+	return created;
+};
+
+export const setInventoryQuantity = async (
+	db: CommerceDb,
+	id: string,
+	quantity: number
+) => {
+	const [updated] = await db
+		.update(commerceInventory)
+		.set({ quantity })
+		.where(eq(commerceInventory.id, id))
+		.returning();
+
+	return updated;
+};
+
+export const deleteInventoryItem = async (db: CommerceDb, id: string) => {
+	await db.delete(commerceInventory).where(eq(commerceInventory.id, id));
 };
 
 // ---- Portfolio gallery ----

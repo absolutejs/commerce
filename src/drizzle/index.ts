@@ -58,6 +58,7 @@ export const commerceDiscounts = pgTable('discounts', {
 export const commerceOrders = pgTable('orders', {
 	amount_total: integer(),
 	artwork_urls: jsonb().$type<string[]>().default([]),
+	assignee: varchar({ length: 120 }),
 	carrier: varchar({ length: 80 }),
 	cart_snapshot: jsonb().$type<unknown[]>().default([]),
 	created_at: timestamp().notNull().defaultNow(),
@@ -65,6 +66,7 @@ export const commerceOrders = pgTable('orders', {
 	customer_email: varchar({ length: 320 }),
 	digitized_at: timestamp(),
 	digitized_url: varchar({ length: 600 }),
+	due_date: timestamp(),
 	fulfillment: varchar({ length: 20 }),
 	label_url: varchar({ length: 600 }),
 	line_items: jsonb().$type<CommerceOrderLine[]>().default([]),
@@ -75,11 +77,24 @@ export const commerceOrders = pgTable('orders', {
 	proof_token: varchar({ length: 64 }),
 	proof_url: varchar({ length: 600 }),
 	rejection_reason: text(),
+	rush: boolean().notNull().default(false),
 	session_id: varchar({ length: 255 }).primaryKey(),
 	shipped_at: timestamp(),
 	shipping: jsonb().$type<CommerceShippingAddress>(),
+	spoilage: integer().notNull().default(0),
 	status: varchar({ length: 50 }).notNull(),
 	tracking_number: varchar({ length: 160 })
+});
+
+// On-hand blank-garment stock, keyed by product + size + color.
+export const commerceInventory = pgTable('inventory', {
+	color: varchar({ length: 60 }).notNull(),
+	created_at: timestamp().notNull().defaultNow(),
+	id: uuid().defaultRandom().primaryKey(),
+	low_threshold: integer().notNull().default(0),
+	product_id: varchar({ length: 40 }).notNull(),
+	quantity: integer().notNull().default(0),
+	size: varchar({ length: 20 }).notNull()
 });
 
 // A bulk / B2B quote request. Not a paid order; the shop replies with a price.
@@ -223,6 +238,7 @@ export const commerceDrizzleSchema = {
 	giftCards: commerceGiftCards,
 	groupOrders: commerceGroupOrders,
 	groupStores: commerceGroupStores,
+	inventory: commerceInventory,
 	orders: commerceOrders,
 	quotes: commerceQuotes,
 	returnRequests: commerceReturnRequests,
