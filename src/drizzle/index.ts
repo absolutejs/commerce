@@ -127,16 +127,32 @@ export const commerceGiftCards = pgTable('gift_cards', {
 
 // A shared team/group store: members order their own size + name under one
 // store with a deadline, and the shop batches them. `slug` is the public handle.
+// `cause` + `fundraise_cents` turn it into a fundraiser (a per-item markup that
+// goes to the named cause).
 export const commerceGroupStores = pgTable('group_stores', {
 	active: boolean().notNull().default(true),
+	cause: varchar({ length: 160 }),
 	created_at: timestamp().notNull().defaultNow(),
 	deadline: varchar({ length: 60 }),
+	fundraise_cents: integer().notNull().default(0),
 	id: uuid().defaultRandom().primaryKey(),
 	message: text(),
 	name: varchar({ length: 160 }).notNull(),
 	organizer_email: varchar({ length: 320 }),
 	product_id: varchar({ length: 40 }).notNull(),
 	slug: varchar({ length: 80 }).notNull().unique()
+});
+
+// A finished-work portfolio item for the shop's "our work" gallery.
+export const commerceGalleryItems = pgTable('gallery_items', {
+	created_at: timestamp().notNull().defaultNow(),
+	featured: boolean().notNull().default(false),
+	id: uuid().defaultRandom().primaryKey(),
+	image_url: varchar({ length: 600 }).notNull(),
+	method: varchar({ length: 40 }),
+	product_id: varchar({ length: 40 }),
+	tags: jsonb().$type<string[]>().default([]),
+	title: varchar({ length: 160 }).notNull()
 });
 
 // Links a placed order to a group store (written when its checkout clears).
@@ -203,6 +219,7 @@ export const commerceDrizzleSchema = {
 	designs: commerceDesigns,
 	discounts: commerceDiscounts,
 	favorites: commerceFavorites,
+	galleryItems: commerceGalleryItems,
 	giftCards: commerceGiftCards,
 	groupOrders: commerceGroupOrders,
 	groupStores: commerceGroupStores,

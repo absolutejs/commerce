@@ -7,6 +7,7 @@ import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
 	commerceAbandonedCarts,
 	commerceFavorites,
+	commerceGalleryItems,
 	commerceGiftCards,
 	commerceGroupOrders,
 	commerceGroupStores,
@@ -30,6 +31,8 @@ export type NewReturnRequest = typeof commerceReturnRequests.$inferInsert;
 export type GiftCard = typeof commerceGiftCards.$inferSelect;
 export type GroupStore = typeof commerceGroupStores.$inferSelect;
 export type NewGroupStore = typeof commerceGroupStores.$inferInsert;
+export type GalleryItem = typeof commerceGalleryItems.$inferSelect;
+export type NewGalleryItem = typeof commerceGalleryItems.$inferInsert;
 export type GiftCardRedemption = {
 	appliedCents: number;
 	balanceCents: number;
@@ -227,6 +230,30 @@ export const redeemGiftCard = async (
 			.where(eq(commerceGiftCards.code, card.code));
 
 	return { appliedCents: applied, balanceCents: balance };
+};
+
+// ---- Portfolio gallery ----
+
+export const createGalleryItem = async (
+	db: CommerceDb,
+	item: NewGalleryItem
+) => {
+	const [created] = await db
+		.insert(commerceGalleryItems)
+		.values(item)
+		.returning();
+
+	return created;
+};
+
+export const listGalleryItems = (db: CommerceDb) =>
+	db
+		.select()
+		.from(commerceGalleryItems)
+		.orderBy(desc(commerceGalleryItems.created_at));
+
+export const deleteGalleryItem = async (db: CommerceDb, id: string) => {
+	await db.delete(commerceGalleryItems).where(eq(commerceGalleryItems.id, id));
 };
 
 // ---- Group / team stores ----
