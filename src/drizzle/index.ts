@@ -73,6 +73,7 @@ export const commerceInvoices = pgTable('invoices', {
 	line_items: jsonb().$type<CommerceInvoiceLine[]>().default([]),
 	notes: text(),
 	number: varchar({ length: 40 }).notNull(),
+	order_session: varchar({ length: 255 }),
 	po_number: varchar({ length: 80 }),
 	status: varchar({ length: 20 }).notNull().default('draft'),
 	tax_exempt: boolean().notNull().default(false)

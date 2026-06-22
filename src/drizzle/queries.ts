@@ -303,6 +303,19 @@ export const getInvoice = async (db: CommerceDb, id: string) => {
 	return invoice ?? null;
 };
 
+export const getInvoiceByOrder = async (
+	db: CommerceDb,
+	orderSession: string
+) => {
+	const [invoice] = await db
+		.select()
+		.from(commerceInvoices)
+		.where(eq(commerceInvoices.order_session, orderSession))
+		.limit(1);
+
+	return invoice ?? null;
+};
+
 export const setInvoiceStatus = async (
 	db: CommerceDb,
 	id: string,
