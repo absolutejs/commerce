@@ -439,6 +439,9 @@ export const upsertMembership = async (
 	return saved;
 };
 
+export const listMemberships = (db: CommerceDb) =>
+	db.select().from(commerceMemberships).orderBy(desc(commerceMemberships.created_at));
+
 export const getMembership = async (db: CommerceDb, email: string) => {
 	const [row] = await db
 		.select()
@@ -486,6 +489,14 @@ export const ensureLoyalty = async (
 
 	return existing;
 };
+
+// Top loyalty balances first — for an admin leaderboard / VIP view.
+export const listLoyalty = (db: CommerceDb, limit = 100) =>
+	db
+		.select()
+		.from(commerceLoyalty)
+		.orderBy(desc(commerceLoyalty.points))
+		.limit(limit);
 
 export const getLoyalty = async (db: CommerceDb, email: string) => {
 	const [row] = await db
