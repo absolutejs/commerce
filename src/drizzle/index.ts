@@ -107,6 +107,7 @@ export const commerceOrders = pgTable('orders', {
 	due_date: timestamp(),
 	fulfillment: varchar({ length: 20 }),
 	label_url: varchar({ length: 600 }),
+	pickup_at: timestamp(),
 	line_items: jsonb().$type<CommerceOrderLine[]>().default([]),
 	payment_status: varchar({ length: 50 }),
 	production_stage: varchar({ length: 20 }),
