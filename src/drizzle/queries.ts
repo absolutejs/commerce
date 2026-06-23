@@ -2,7 +2,7 @@
 // instance (Postgres) as the first arg, so they work with whatever connection
 // the host app already has. drizzle-orm is a peer dependency.
 
-import { and, desc, eq, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import type { PgDatabase } from 'drizzle-orm/pg-core';
 import {
 	commerceAbandonedCarts,
@@ -15,6 +15,7 @@ import {
 	commerceInventory,
 	commerceInvoices,
 	commerceOrders,
+	commercePushSubscriptions,
 	commerceReturnRequests,
 	commerceReviews,
 	commerceSavedDesigns,
@@ -40,6 +41,8 @@ export type InventoryItem = typeof commerceInventory.$inferSelect;
 export type NewInventoryItem = typeof commerceInventory.$inferInsert;
 export type Company = typeof commerceCompanies.$inferSelect;
 export type NewCompany = typeof commerceCompanies.$inferInsert;
+export type PushSubscription = typeof commercePushSubscriptions.$inferSelect;
+export type NewPushSubscription = typeof commercePushSubscriptions.$inferInsert;
 export type Invoice = typeof commerceInvoices.$inferSelect;
 export type NewInvoice = typeof commerceInvoices.$inferInsert;
 export type GiftCardRedemption = {
@@ -328,6 +331,55 @@ export const setInvoiceStatus = async (
 		.returning();
 
 	return updated;
+};
+
+// ---- Web Push subscriptions ----
+
+export const savePushSubscription = async (
+	db: CommerceDb,
+	sub: NewPushSubscription
+) => {
+	const [saved] = await db
+		.insert(commercePushSubscriptions)
+		.values(sub)
+		.onConflictDoUpdate({
+			set: { auth: sub.auth, email: sub.email, p256dh: sub.p256dh, role: sub.role },
+			target: commercePushSubscriptions.endpoint
+		})
+		.returning();
+
+	return saved;
+};
+
+export const listPushSubscriptions = (db: CommerceDb) =>
+	db.select().from(commercePushSubscriptions);
+
+export const listPushSubscriptionsByEmail = (db: CommerceDb, email: string) =>
+	db
+		.select()
+		.from(commercePushSubscriptions)
+		.where(eq(commercePushSubscriptions.email, email));
+
+export const listPushSubscriptionsByRole = (db: CommerceDb, role: string) =>
+	db
+		.select()
+		.from(commercePushSubscriptions)
+		.where(eq(commercePushSubscriptions.role, role));
+
+export const deletePushSubscription = async (db: CommerceDb, endpoint: string) => {
+	await db
+		.delete(commercePushSubscriptions)
+		.where(eq(commercePushSubscriptions.endpoint, endpoint));
+};
+
+export const prunePushSubscriptions = async (
+	db: CommerceDb,
+	endpoints: string[]
+) => {
+	if (endpoints.length === 0) return;
+	await db
+		.delete(commercePushSubscriptions)
+		.where(inArray(commercePushSubscriptions.endpoint, endpoints));
 };
 
 // ---- Inventory (blank stock) ----

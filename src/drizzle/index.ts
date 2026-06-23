@@ -196,6 +196,18 @@ export const commerceGroupStores = pgTable('group_stores', {
 	slug: varchar({ length: 80 }).notNull().unique()
 });
 
+// A Web Push subscription (one per browser/device). `role`/`email` let the app
+// target the owner's devices vs a specific customer's. `endpoint` is unique.
+export const commercePushSubscriptions = pgTable('push_subscriptions', {
+	auth: varchar({ length: 255 }).notNull(),
+	created_at: timestamp().notNull().defaultNow(),
+	email: varchar({ length: 320 }),
+	endpoint: varchar({ length: 600 }).notNull().unique(),
+	id: uuid().defaultRandom().primaryKey(),
+	p256dh: varchar({ length: 255 }).notNull(),
+	role: varchar({ length: 20 })
+});
+
 // A finished-work portfolio item for the shop's "our work" gallery.
 export const commerceGalleryItems = pgTable('gallery_items', {
 	created_at: timestamp().notNull().defaultNow(),
@@ -280,6 +292,7 @@ export const commerceDrizzleSchema = {
 	groupStores: commerceGroupStores,
 	inventory: commerceInventory,
 	orders: commerceOrders,
+	pushSubscriptions: commercePushSubscriptions,
 	quotes: commerceQuotes,
 	returnRequests: commerceReturnRequests,
 	reviews: commerceReviews,
