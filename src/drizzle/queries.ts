@@ -12,9 +12,12 @@ import {
 	commerceGiftCards,
 	commerceGroupOrders,
 	commerceGroupStores,
+	commerceGiftContributions,
+	commerceGiftPools,
 	commerceInventory,
 	commerceInvoices,
 	commerceLoyalty,
+	commerceMemberships,
 	commerceOrders,
 	commercePushSubscriptions,
 	commerceReturnRequests,
@@ -46,6 +49,13 @@ export type PushSubscription = typeof commercePushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof commercePushSubscriptions.$inferInsert;
 export type Loyalty = typeof commerceLoyalty.$inferSelect;
 export type NewLoyalty = typeof commerceLoyalty.$inferInsert;
+export type GiftPool = typeof commerceGiftPools.$inferSelect;
+export type NewGiftPool = typeof commerceGiftPools.$inferInsert;
+export type GiftContribution = typeof commerceGiftContributions.$inferSelect;
+export type NewGiftContribution =
+	typeof commerceGiftContributions.$inferInsert;
+export type Membership = typeof commerceMemberships.$inferSelect;
+export type NewMembership = typeof commerceMemberships.$inferInsert;
 export type Invoice = typeof commerceInvoices.$inferSelect;
 export type NewInvoice = typeof commerceInvoices.$inferInsert;
 export type GiftCardRedemption = {
@@ -334,6 +344,123 @@ export const setInvoiceStatus = async (
 		.returning();
 
 	return updated;
+};
+
+// ---- Group gift pools (chip-in) ----
+
+export const createGiftPool = async (db: CommerceDb, pool: NewGiftPool) => {
+	const [created] = await db.insert(commerceGiftPools).values(pool).returning();
+
+	return created;
+};
+
+export const listGiftPools = (db: CommerceDb) =>
+	db.select().from(commerceGiftPools).orderBy(desc(commerceGiftPools.created_at));
+
+export const getGiftPoolBySlug = async (db: CommerceDb, slug: string) => {
+	const [pool] = await db
+		.select()
+		.from(commerceGiftPools)
+		.where(eq(commerceGiftPools.slug, slug))
+		.limit(1);
+
+	return pool ?? null;
+};
+
+export const getGiftPool = async (db: CommerceDb, id: string) => {
+	const [pool] = await db
+		.select()
+		.from(commerceGiftPools)
+		.where(eq(commerceGiftPools.id, id))
+		.limit(1);
+
+	return pool ?? null;
+};
+
+// Record a contribution and bump the pool's raised total atomically-ish.
+export const addGiftContribution = async (
+	db: CommerceDb,
+	contribution: NewGiftContribution
+) => {
+	const [created] = await db
+		.insert(commerceGiftContributions)
+		.values(contribution)
+		.returning();
+	const [pool] = await db
+		.update(commerceGiftPools)
+		.set({
+			raised_cents: sql`${commerceGiftPools.raised_cents} + ${contribution.amount_cents ?? 0}`
+		})
+		.where(eq(commerceGiftPools.id, contribution.pool_id))
+		.returning();
+
+	return { contribution: created, pool };
+};
+
+export const listGiftContributions = (db: CommerceDb, poolId: string) =>
+	db
+		.select()
+		.from(commerceGiftContributions)
+		.where(eq(commerceGiftContributions.pool_id, poolId))
+		.orderBy(desc(commerceGiftContributions.created_at));
+
+export const setGiftPoolStatus = async (
+	db: CommerceDb,
+	id: string,
+	status: string
+) => {
+	const [pool] = await db
+		.update(commerceGiftPools)
+		.set({ status })
+		.where(eq(commerceGiftPools.id, id))
+		.returning();
+
+	return pool;
+};
+
+// ---- Memberships (subscriptions) ----
+
+export const upsertMembership = async (
+	db: CommerceDb,
+	membership: NewMembership
+) => {
+	const [saved] = await db
+		.insert(commerceMemberships)
+		.values(membership)
+		.onConflictDoUpdate({
+			set: {
+				status: membership.status,
+				subscription_id: membership.subscription_id
+			},
+			target: commerceMemberships.email
+		})
+		.returning();
+
+	return saved;
+};
+
+export const getMembership = async (db: CommerceDb, email: string) => {
+	const [row] = await db
+		.select()
+		.from(commerceMemberships)
+		.where(eq(commerceMemberships.email, email))
+		.limit(1);
+
+	return row ?? null;
+};
+
+export const setMembershipStatus = async (
+	db: CommerceDb,
+	email: string,
+	status: string
+) => {
+	const [row] = await db
+		.update(commerceMemberships)
+		.set({ status })
+		.where(eq(commerceMemberships.email, email))
+		.returning();
+
+	return row;
 };
 
 // ---- Loyalty + referrals ----

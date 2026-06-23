@@ -197,6 +197,43 @@ export const commerceGroupStores = pgTable('group_stores', {
 	slug: varchar({ length: 80 }).notNull().unique()
 });
 
+// A group-gift "chip-in" pool: many contributors fund one custom order. `slug`
+// is the public handle; `raised_cents` accrues as contributions clear.
+export const commerceGiftPools = pgTable('gift_pools', {
+	created_at: timestamp().notNull().defaultNow(),
+	deadline: varchar({ length: 60 }),
+	id: uuid().defaultRandom().primaryKey(),
+	message: text(),
+	organizer_email: varchar({ length: 320 }),
+	product_id: varchar({ length: 40 }),
+	raised_cents: integer().notNull().default(0),
+	slug: varchar({ length: 80 }).notNull().unique(),
+	status: varchar({ length: 20 }).notNull().default('open'),
+	target_cents: integer().notNull().default(0),
+	title: varchar({ length: 160 }).notNull()
+});
+
+// One contribution toward a gift pool.
+export const commerceGiftContributions = pgTable('gift_contributions', {
+	amount_cents: integer().notNull().default(0),
+	contributor_email: varchar({ length: 320 }),
+	contributor_name: varchar({ length: 160 }),
+	created_at: timestamp().notNull().defaultNow(),
+	id: uuid().defaultRandom().primaryKey(),
+	message: text(),
+	pool_id: uuid().notNull()
+});
+
+// A recurring membership (e.g. "Stitch Club"), keyed by email. `subscription_id`
+// is the provider's subscription handle; `status` is active | canceled.
+export const commerceMemberships = pgTable('memberships', {
+	created_at: timestamp().notNull().defaultNow(),
+	email: varchar({ length: 320 }).primaryKey(),
+	started_at: timestamp(),
+	status: varchar({ length: 20 }).notNull().default('active'),
+	subscription_id: varchar({ length: 255 })
+});
+
 // A customer's loyalty record (one per email): points balance + a shareable
 // referral code. Store credit is delivered as gift cards, so it rides the
 // existing gift-card rails rather than a separate ledger.
@@ -300,6 +337,9 @@ export const commerceDrizzleSchema = {
 	favorites: commerceFavorites,
 	galleryItems: commerceGalleryItems,
 	giftCards: commerceGiftCards,
+	giftContributions: commerceGiftContributions,
+	giftPools: commerceGiftPools,
+	memberships: commerceMemberships,
 	groupOrders: commerceGroupOrders,
 	groupStores: commerceGroupStores,
 	inventory: commerceInventory,

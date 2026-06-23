@@ -39,6 +39,10 @@ export type CreateCheckoutInput = {
 	couponId?: string;
 	/** Calculate tax automatically when the provider supports it. */
 	automaticTax?: boolean;
+	/** One-time payment (default) or a recurring subscription. */
+	mode?: 'payment' | 'subscription';
+	/** Billing interval when `mode` is 'subscription'. */
+	recurringInterval?: 'day' | 'week' | 'month' | 'year';
 };
 
 export type CheckoutResult = {
