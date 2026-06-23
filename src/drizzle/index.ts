@@ -196,6 +196,17 @@ export const commerceGroupStores = pgTable('group_stores', {
 	slug: varchar({ length: 80 }).notNull().unique()
 });
 
+// A customer's loyalty record (one per email): points balance + a shareable
+// referral code. Store credit is delivered as gift cards, so it rides the
+// existing gift-card rails rather than a separate ledger.
+export const commerceLoyalty = pgTable('loyalty', {
+	created_at: timestamp().notNull().defaultNow(),
+	email: varchar({ length: 320 }).primaryKey(),
+	points: integer().notNull().default(0),
+	referral_code: varchar({ length: 20 }).notNull().unique(),
+	referred_by: varchar({ length: 20 })
+});
+
 // A Web Push subscription (one per browser/device). `role`/`email` let the app
 // target the owner's devices vs a specific customer's. `endpoint` is unique.
 export const commercePushSubscriptions = pgTable('push_subscriptions', {
@@ -291,6 +302,7 @@ export const commerceDrizzleSchema = {
 	groupOrders: commerceGroupOrders,
 	groupStores: commerceGroupStores,
 	inventory: commerceInventory,
+	loyalty: commerceLoyalty,
 	orders: commerceOrders,
 	pushSubscriptions: commercePushSubscriptions,
 	quotes: commerceQuotes,

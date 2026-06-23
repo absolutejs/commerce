@@ -14,6 +14,7 @@ import {
 	commerceGroupStores,
 	commerceInventory,
 	commerceInvoices,
+	commerceLoyalty,
 	commerceOrders,
 	commercePushSubscriptions,
 	commerceReturnRequests,
@@ -43,6 +44,8 @@ export type Company = typeof commerceCompanies.$inferSelect;
 export type NewCompany = typeof commerceCompanies.$inferInsert;
 export type PushSubscription = typeof commercePushSubscriptions.$inferSelect;
 export type NewPushSubscription = typeof commercePushSubscriptions.$inferInsert;
+export type Loyalty = typeof commerceLoyalty.$inferSelect;
+export type NewLoyalty = typeof commerceLoyalty.$inferInsert;
 export type Invoice = typeof commerceInvoices.$inferSelect;
 export type NewInvoice = typeof commerceInvoices.$inferInsert;
 export type GiftCardRedemption = {
@@ -331,6 +334,95 @@ export const setInvoiceStatus = async (
 		.returning();
 
 	return updated;
+};
+
+// ---- Loyalty + referrals ----
+
+// Fetch a customer's loyalty row, creating it with `referralCode` if absent.
+// The caller supplies the code (generated app-side) so this stays deterministic.
+export const ensureLoyalty = async (
+	db: CommerceDb,
+	email: string,
+	referralCode: string
+) => {
+	const [row] = await db
+		.insert(commerceLoyalty)
+		.values({ email, referral_code: referralCode })
+		.onConflictDoNothing({ target: commerceLoyalty.email })
+		.returning();
+	if (row) return row;
+	const [existing] = await db
+		.select()
+		.from(commerceLoyalty)
+		.where(eq(commerceLoyalty.email, email))
+		.limit(1);
+
+	return existing;
+};
+
+export const getLoyalty = async (db: CommerceDb, email: string) => {
+	const [row] = await db
+		.select()
+		.from(commerceLoyalty)
+		.where(eq(commerceLoyalty.email, email))
+		.limit(1);
+
+	return row ?? null;
+};
+
+export const getLoyaltyByReferralCode = async (
+	db: CommerceDb,
+	code: string
+) => {
+	const [row] = await db
+		.select()
+		.from(commerceLoyalty)
+		.where(eq(commerceLoyalty.referral_code, code))
+		.limit(1);
+
+	return row ?? null;
+};
+
+export const addLoyaltyPoints = async (
+	db: CommerceDb,
+	email: string,
+	points: number
+) => {
+	const [row] = await db
+		.update(commerceLoyalty)
+		.set({ points: sql`${commerceLoyalty.points} + ${points}` })
+		.where(eq(commerceLoyalty.email, email))
+		.returning();
+
+	return row;
+};
+
+export const spendLoyaltyPoints = async (
+	db: CommerceDb,
+	email: string,
+	points: number
+) => {
+	const [row] = await db
+		.update(commerceLoyalty)
+		.set({ points: sql`GREATEST(${commerceLoyalty.points} - ${points}, 0)` })
+		.where(eq(commerceLoyalty.email, email))
+		.returning();
+
+	return row;
+};
+
+export const setReferredBy = async (
+	db: CommerceDb,
+	email: string,
+	code: string
+) => {
+	const [row] = await db
+		.update(commerceLoyalty)
+		.set({ referred_by: code })
+		.where(eq(commerceLoyalty.email, email))
+		.returning();
+
+	return row;
 };
 
 // ---- Web Push subscriptions ----
