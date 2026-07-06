@@ -4,5 +4,7 @@
 // coverage, DPI facts). Peer deps: react, three.
 
 export * from './analyzeArtwork';
+export * from './decals';
 export * from './decorationTexture';
 export * from './fabricTexture';
+export * from './renderTextDesign';
