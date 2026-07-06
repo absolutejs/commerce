@@ -5,6 +5,7 @@
 export * from './core/analytics';
 export * from './core/cart';
 export * from './core/decoration';
+export * from './core/decorationDefaults';
 export * from './core/discounts';
 export * from './core/email';
 export * from './core/machineFiles';

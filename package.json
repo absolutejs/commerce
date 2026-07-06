@@ -1,6 +1,6 @@
 {
 	"name": "@absolutejs/commerce",
-	"version": "0.17.0-beta.0",
+	"version": "0.17.1-beta.0",
 	"description": "Provider-agnostic commerce primitives (cart, orders, fulfillment, shipping) for AbsoluteJS",
 	"repository": {
 		"type": "git",
