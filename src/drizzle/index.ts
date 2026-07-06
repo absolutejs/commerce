@@ -117,6 +117,9 @@ export const commerceOrders = pgTable('orders', {
 	proof_url: varchar({ length: 600 }),
 	rejection_reason: text(),
 	rush: boolean().notNull().default(false),
+	/** Stitched-sample sign-off for first-run designs: none|sent|approved|changes. */
+	sewout_status: varchar({ length: 20 }),
+	sewout_url: varchar({ length: 600 }),
 	session_id: varchar({ length: 255 }).primaryKey(),
 	shipped_at: timestamp(),
 	shipping: jsonb().$type<CommerceShippingAddress>(),
