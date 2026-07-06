@@ -327,6 +327,17 @@ export const commerceSubscribers = pgTable('subscribers', {
 	email: varchar({ length: 320 }).primaryKey()
 });
 
+// Full machine-readable production spec per checkout (decoration shops) —
+// checkout metadata is tiny, so the real spec (dimensions, thread sequence,
+// placement measurements, puff flags) lives here, written at checkout-session
+// creation and linked to the order by the payment webhook via its spec id.
+export const commerceProductionSpecs = pgTable('production_specs', {
+	created_at: timestamp().notNull().defaultNow(),
+	payload: jsonb().$type<Record<string, unknown>>().notNull(),
+	session_id: varchar({ length: 255 }),
+	spec_id: varchar({ length: 64 }).primaryKey()
+});
+
 // Every commerce table in one object — spread into your own Drizzle schema.
 export const commerceDrizzleSchema = {
 	abandonedCarts: commerceAbandonedCarts,
@@ -345,6 +356,7 @@ export const commerceDrizzleSchema = {
 	inventory: commerceInventory,
 	loyalty: commerceLoyalty,
 	orders: commerceOrders,
+	productionSpecs: commerceProductionSpecs,
 	pushSubscriptions: commercePushSubscriptions,
 	quotes: commerceQuotes,
 	returnRequests: commerceReturnRequests,

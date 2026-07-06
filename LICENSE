@@ -26,7 +26,9 @@ any of the following:
    managed service that competes with a hosted commerce, checkout, storefront,
    or e-commerce backend platform (including, but not limited to, services like
    Shopify, BigCommerce, Medusa Cloud, Commerce.js/Chec, Swell, or Saleor
-   Cloud). This includes any product whose primary value to its users is the
+   Cloud), or with a hosted product-decoration / print-on-demand platform
+   (including, but not limited to, services like Printful, Printify,
+   DecoNetwork, or InkSoft). This includes any product whose primary value to its users is the
    functionality the Licensed Work provides.
 
 2. **Resale or Redistribution as a Standalone Product.** You may not sell,
