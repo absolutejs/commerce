@@ -328,6 +328,17 @@ export const commerceSavedDesigns = pgTable('saved_designs', {
 	snapshot: jsonb().$type<Record<string, unknown>>().notNull()
 });
 
+// Admin-editable quantity-break pricing, keyed by whatever grouping the shop
+// prices with (product category, collection, SKU…). Breaks are applied by
+// core/pricing quantityDiscount after normalizeQuantityBreaks.
+export const commercePricingTiers = pgTable('pricing_tiers', {
+	breaks: jsonb()
+		.$type<{ min: number; discount: number }[]>()
+		.notNull(),
+	tier_key: varchar({ length: 80 }).primaryKey(),
+	updated_at: timestamp().notNull().defaultNow()
+});
+
 // Newsletter subscribers. `email` is the primary key so signups are idempotent.
 export const commerceSubscribers = pgTable('subscribers', {
 	created_at: timestamp().notNull().defaultNow(),
@@ -369,6 +380,7 @@ export const commerceDrizzleSchema = {
 	returnRequests: commerceReturnRequests,
 	reviews: commerceReviews,
 	savedDesigns: commerceSavedDesigns,
+	pricingTiers: commercePricingTiers,
 	subscribers: commerceSubscribers
 };
 
