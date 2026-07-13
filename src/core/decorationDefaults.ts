@@ -40,16 +40,19 @@ export const STANDARD_ZONE_PHYSICALS = {
 	},
 	fullBack: {
 		anchor: 'centered, top of design 5″ below collar seam (3″ for youth sizes)',
+		code: 'FB',
 		heightIn: 12.5,
 		widthIn: 11
 	},
 	shirtFront: {
 		anchor: 'zone center at mid-chest; left-chest placement ≈ 7–9″ down from left shoulder seam, 3–5″ from center',
+		code: 'FF',
 		heightIn: 11,
 		widthIn: 9.5
 	},
 	sleeve: {
 		anchor: 'centered on left sleeve, ~1″ above hem',
+		code: 'LS',
 		heightIn: 3.5,
 		widthIn: 3.5
 	},

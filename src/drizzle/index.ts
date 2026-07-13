@@ -110,6 +110,10 @@ export const commerceOrders = pgTable('orders', {
 	pickup_at: timestamp(),
 	line_items: jsonb().$type<CommerceOrderLine[]>().default([]),
 	payment_status: varchar({ length: 50 }),
+	/** Digitized stitch files + cut files, one per design (digitized_url is the legacy single slot). */
+	production_files: jsonb().$type<
+		{ url: string; filename?: string | null; artworkUrl?: string | null }[]
+	>(),
 	production_stage: varchar({ length: 20 }),
 	proof_note: text(),
 	proof_status: varchar({ length: 20 }),

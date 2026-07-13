@@ -3,22 +3,27 @@ import * as THREE from 'three';
 import type { EmbroideryType } from '../core/decoration';
 import { hexToRgb, nearestThread, type ThreadRef } from '../core/threads';
 
-/** Decoration method id — apps may extend beyond the built-in four. */
+/** Decoration method id — apps may extend beyond the built-in six. */
 export type DecorationMethodId =
 	| 'embroidery'
 	| 'screen-print'
 	| 'dtg'
-	| 'vinyl';
+	| 'vinyl'
+	| 'dtf'
+	| 'sublimation';
 
 type MethodSurface = { metalness: number; roughness: number };
 
 // Per-method PBR surface for the decal. Embroidery reads as raised polyester
-// thread (low roughness + generated normal map), vinyl as glossy film, the
-// ink methods sit matte in the fabric.
+// thread (low roughness + generated normal map), vinyl as glossy film, DTF
+// as a thin semi-gloss transfer, and the ink/dye methods sit matte in the
+// fabric (sublimation dyes the fibers — no surface build at all).
 export const METHOD_SURFACE: Record<DecorationMethodId, MethodSurface> = {
+	dtf: { metalness: 0.02, roughness: 0.5 },
 	dtg: { metalness: 0, roughness: 0.92 },
 	embroidery: { metalness: 0.05, roughness: 0.38 },
 	'screen-print': { metalness: 0, roughness: 0.7 },
+	sublimation: { metalness: 0, roughness: 1 },
 	vinyl: { metalness: 0.08, roughness: 0.22 }
 };
 

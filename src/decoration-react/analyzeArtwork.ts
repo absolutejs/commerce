@@ -17,6 +17,8 @@ export type ArtworkAnalysis = {
 	isVector: boolean;
 	/** Distinct color count (coarse buckets) — screen-print separations. */
 	colorCount: number;
+	/** Dominant art colors (largest share first) — ink PMS references. */
+	palette: { hex: string; share: number }[];
 };
 
 const SAMPLE_EDGE = 96;
@@ -25,6 +27,12 @@ const ALPHA_CUTOFF = 60;
 const MIN_SHARE = 0.03;
 /** Machines run a limited needle count — cap the sequence like Printful (~6). */
 const MAX_THREADS = 6;
+/** Buckets under this share of covered pixels don't count as spot colors. */
+const MIN_COLOR_SHARE = 0.02;
+/** Presses top out around 6–8 heads — cap the reported ink palette. */
+const MAX_PALETTE = 8;
+/** Buckets closer than this (Euclidean RGB²) are one ink, not two screens. */
+const MERGE_DISTANCE_SQ = 32 * 32;
 
 type ThreadCount = { thread: ThreadRef; count: number };
 
@@ -65,7 +73,10 @@ export const analyzeArtwork = (src: string, catalog: ThreadRef[]) =>
 			if (!context) return resolve(null);
 			context.drawImage(image, 0, 0, sampleW, sampleH);
 
-			const base: Omit<ArtworkAnalysis, 'coverage' | 'threads'> = {
+			const base: Omit<
+				ArtworkAnalysis,
+				'coverage' | 'palette' | 'threads'
+			> = {
 				aspect,
 				colorCount: 1,
 				isVector,
@@ -75,10 +86,18 @@ export const analyzeArtwork = (src: string, catalog: ThreadRef[]) =>
 			const data = readData(context, sampleW, sampleH);
 			// Tainted canvas (no CORS) — still return the aspect ratio.
 			if (!data)
-				return resolve({ ...base, coverage: 0.4, threads: [] });
+				return resolve({
+					...base,
+					coverage: 0.4,
+					palette: [],
+					threads: []
+				});
 
 			const counts = new Map<string, ThreadCount>();
-			const buckets = new Map<number, number>();
+			const buckets = new Map<
+				number,
+				{ blue: number; count: number; green: number; red: number }
+			>();
 			let covered = 0;
 			const total = sampleW * sampleH;
 			for (let pixel = 0; pixel < total; pixel += 1) {
@@ -89,9 +108,19 @@ export const analyzeArtwork = (src: string, catalog: ThreadRef[]) =>
 				const green = data[channel + 1] as number;
 				const blue = data[channel + 2] as number;
 				// 4 bits per channel — merges anti-aliasing, keeps spot colors.
-				const bucket =
+				const key =
 					((red >> 4) << 8) | ((green >> 4) << 4) | (blue >> 4);
-				buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+				const bucket = buckets.get(key) ?? {
+					blue: 0,
+					count: 0,
+					green: 0,
+					red: 0
+				};
+				bucket.blue += blue;
+				bucket.count += 1;
+				bucket.green += green;
+				bucket.red += red;
+				buckets.set(key, bucket);
 				const thread = nearestThread(catalog, red, green, blue);
 				const entry = counts.get(thread.code);
 				if (entry) entry.count += 1;
@@ -99,7 +128,12 @@ export const analyzeArtwork = (src: string, catalog: ThreadRef[]) =>
 			}
 
 			if (covered === 0)
-				return resolve({ ...base, coverage: 0, threads: [] });
+				return resolve({
+					...base,
+					coverage: 0,
+					palette: [],
+					threads: []
+				});
 
 			const threads = [...counts.values()]
 				.filter((entry) => entry.count / covered >= MIN_SHARE)
@@ -108,14 +142,56 @@ export const analyzeArtwork = (src: string, catalog: ThreadRef[]) =>
 				.map((entry) => entry.thread);
 
 			// Only colors with real area count as spot colors/separations.
-			const colorCount = [...buckets.values()].filter(
-				(count) => count / covered >= 0.02
-			).length;
+			// Greedy-merge buckets that are visually the same ink — 4-bit
+			// bucketing splits anti-aliased edges into near-identical
+			// neighbors, which would each bill their own screen.
+			const candidates = [...buckets.values()]
+				.filter((bucket) => bucket.count / covered >= MIN_COLOR_SHARE)
+				.sort((left, right) => right.count - left.count);
+			const realColors: typeof candidates = [];
+			candidates.forEach((bucket) => {
+				const avg = (sum: number) => sum / bucket.count;
+				const host = realColors.find((cluster) => {
+					const dRed = avg(bucket.red) - cluster.red / cluster.count;
+					const dGreen =
+						avg(bucket.green) - cluster.green / cluster.count;
+					const dBlue =
+						avg(bucket.blue) - cluster.blue / cluster.count;
+
+					return (
+						dRed * dRed + dGreen * dGreen + dBlue * dBlue <=
+						MERGE_DISTANCE_SQ
+					);
+				});
+				if (!host) return realColors.push({ ...bucket });
+				host.blue += bucket.blue;
+				host.count += bucket.count;
+				host.green += bucket.green;
+				host.red += bucket.red;
+
+				return undefined;
+			});
+
+			const toHexByte = (sum: number, count: number) =>
+				Math.round(sum / count)
+					.toString(16)
+					.padStart(2, '0');
+			// Average color of each bucket — a truer ink hex than the bucket
+			// floor, since the bucket spans a 16-value range per channel.
+			const palette = [...realColors]
+				.sort((left, right) => right.count - left.count)
+				.slice(0, MAX_PALETTE)
+				.map((bucket) => ({
+					hex: `#${toHexByte(bucket.red, bucket.count)}${toHexByte(bucket.green, bucket.count)}${toHexByte(bucket.blue, bucket.count)}`,
+					share:
+						Math.round((bucket.count / covered) * 100) / 100
+				}));
 
 			return resolve({
 				...base,
-				colorCount: Math.max(1, colorCount),
+				colorCount: Math.max(1, realColors.length),
 				coverage: covered / total,
+				palette,
 				threads
 			});
 		};

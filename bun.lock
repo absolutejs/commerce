@@ -18,11 +18,15 @@
         "typescript": "^5.9.3",
       },
       "peerDependencies": {
+        "@react-three/drei": ">=9.0.0",
+        "@react-three/fiber": ">=8.0.0",
         "drizzle-orm": ">=0.30.0",
         "react": ">=18.0.0",
         "three": "",
       },
       "optionalPeers": [
+        "@react-three/drei",
+        "@react-three/fiber",
         "drizzle-orm",
         "react",
         "three",
