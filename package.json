@@ -42,12 +42,18 @@
 			"import": "./dist/drizzle/index.js",
 			"types": "./dist/drizzle/index.d.ts",
 			"default": "./dist/drizzle/index.js"
-		}
+		},
+		"./manifest": {
+			"types": "./dist/manifest.d.ts",
+			"import": "./dist/manifest.js",
+			"default": "./dist/manifest.js"
+		},
+		"./manifest.json": "./dist/manifest.json"
 	},
 	"license": "BSL-1.1",
 	"author": "Alex Kahn",
 	"scripts": {
-		"build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.ts --outdir dist --target bun --external drizzle-orm --external react --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external three --external '@react-three/*' && tsc --emitDeclarationOnly --project tsconfig.json",
+		"build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.ts ./src/manifest.ts --root ./src --outdir dist --target bun --external drizzle-orm --external react --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external three --external '@react-three/*' && tsc --emitDeclarationOnly --project tsconfig.json && absolute-manifest emit",
 		"format": "prettier --write \"./**/*.{js,ts,json,md}\"",
 		"release": "bun run build && bun publish --tag beta",
 		"typecheck": "tsc --noEmit"
@@ -87,6 +93,11 @@
 		"typescript": "^5.9.3"
 	},
 	"dependencies": {
+		"@absolutejs/manifest": "^0.1.0",
+		"@sinclair/typebox": "^0.34.0",
 		"fflate": "^0.8.3"
+	},
+	"absolutejs": {
+		"manifestContract": 1
 	}
 }
