@@ -1,9 +1,16 @@
 import type {
   BrandKit,
+  Catalog,
+  CatalogCollection,
   CatalogCustomizationPolicy,
+  CatalogListing,
+  CatalogProduct,
   CatalogStatus,
   ListingStatus,
+  ProductVariant,
 } from "../core/catalog";
+import { emptyBrandKit, variantIsAvailable } from "../core/catalog";
+import type { PublishedStorefront } from "../core/storefront";
 import { and, asc, eq, inArray, ne } from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
@@ -163,21 +170,113 @@ const assertListingReady = async (
 ) => {
   const product = await ownerProduct(db, ownerKey, input.productId);
   if (input.status !== "active") return product;
-  const [variant] = await db
-    .select({ id: commerceProductVariants.id })
+  const variants = await db
+    .select()
     .from(commerceProductVariants)
     .where(
       and(
         eq(commerceProductVariants.product_id, input.productId),
         eq(commerceProductVariants.available, true),
       ),
-    )
-    .limit(1);
-  if (product.status !== "active" || !variant)
+    );
+  const purchasable = variants.some(
+    (variant) =>
+      variantIsAvailable(toProductVariant(variant)) &&
+      (input.basePriceCents ?? variant.price_cents) != null,
+  );
+  if (product.status !== "active" || !purchasable)
     throw new StorefrontMerchandisingError("listing_not_ready");
 
   return product;
 };
+
+const toCatalog = (row: typeof commerceCatalogs.$inferSelect): Catalog => ({
+  brandKit: row.brand_kit ?? emptyBrandKit(),
+  currency: row.currency,
+  id: row.id,
+  locale: row.locale,
+  name: row.name,
+  ownerKey: row.owner_key,
+  settings: row.settings ?? {},
+  slug: row.slug,
+  status: row.status as Catalog["status"],
+});
+
+const toCatalogListing = (
+  row: typeof commerceCatalogListings.$inferSelect,
+): CatalogListing => ({
+  basePriceCents: row.base_price_cents,
+  catalogId: row.catalog_id,
+  compareAtCents: row.compare_at_cents,
+  customization: row.customization ?? {},
+  customizationMode:
+    row.customization_mode as CatalogListing["customizationMode"],
+  description: row.description,
+  id: row.id,
+  metadata: row.metadata ?? {},
+  position: row.position,
+  productId: row.product_id,
+  slug: row.slug,
+  status: row.status as CatalogListing["status"],
+  tags: row.tags ?? [],
+  title: row.title,
+});
+
+const toCatalogProduct = (
+  row: typeof commerceProducts.$inferSelect,
+): CatalogProduct => ({
+  attributes: row.attributes ?? {},
+  brand: row.brand,
+  category: row.category,
+  decorationAreas: row.decoration_areas ?? [],
+  description: row.description,
+  externalId: row.external_id,
+  id: row.id,
+  media: row.media ?? [],
+  metadata: row.metadata ?? {},
+  optionNames: row.option_names ?? [],
+  productType: row.product_type,
+  slug: row.slug,
+  sourceId: row.source_id,
+  status: row.status as CatalogProduct["status"],
+  styleCode: row.style_code,
+  tags: row.tags ?? [],
+  title: row.title,
+});
+
+const toProductVariant = (
+  row: typeof commerceProductVariants.$inferSelect,
+): ProductVariant => ({
+  available: row.available,
+  barcode: row.barcode,
+  compareAtCents: row.compare_at_cents,
+  costCents: row.cost_cents,
+  currency: row.currency,
+  externalId: row.external_id,
+  id: row.id,
+  inventoryPolicy: row.inventory_policy as ProductVariant["inventoryPolicy"],
+  inventoryQuantity: row.inventory_quantity,
+  media: row.media ?? [],
+  metadata: row.metadata ?? {},
+  options: row.options,
+  priceCents: row.price_cents,
+  productId: row.product_id,
+  sku: row.sku,
+  supplierSku: row.supplier_sku,
+});
+
+const toCollection = (
+  row: typeof commerceCatalogCollections.$inferSelect,
+): CatalogCollection => ({
+  catalogId: row.catalog_id,
+  description: row.description,
+  id: row.id,
+  imageUrl: row.image_url,
+  position: row.position,
+  slug: row.slug,
+  status: row.status as CatalogCollection["status"],
+  title: row.title,
+});
 
 const assertCatalogReady = async (db: CommerceDb, catalogId: string) => {
   const [listing] = await db
@@ -629,14 +728,17 @@ export const createStorefrontMerchandisingService = (db: CommerceDb) => {
             .orderBy(asc(commerceCatalogCollectionListings.position));
 
     return {
-      catalog,
-      collections,
+      catalog: toCatalog(catalog),
+      collections: collections.map(toCollection),
       listings: listings.map((entry) => ({
-        ...entry,
-        variants: variantsByProduct.get(entry.product.id) ?? [],
+        listing: toCatalogListing(entry.listing),
+        product: toCatalogProduct(entry.product),
+        variants: (variantsByProduct.get(entry.product.id) ?? [])
+          .map(toProductVariant)
+          .filter(variantIsAvailable),
       })),
       memberships,
-    };
+    } satisfies PublishedStorefront;
   };
 
   return {

@@ -57,6 +57,18 @@ cannot publish without a ready listing. Published projections contain only
 active product truth and available variants, while fleet posture identifies an
 active storefront that later became unhealthy after a supplier sync.
 
+`resolveStorefrontCart()` is the checkout trust boundary. Browser carts retain
+only listing, variant, quantity, and customization identities; the server
+resolves those identities against the current ready-only storefront projection,
+rechecks availability and buyer-field/artwork policy, and calculates every
+price from canonical data. `createStorefrontCheckout()` forwards only that
+resolved quote plus a host-owned idempotency key to a `PaymentProvider`.
+
+The `./react` export includes a reusable `StorefrontRenderer` and listing/card
+controls, while `./client` includes a storefront-scoped persistent cart store.
+Both remain provider-neutral and can be styled by the host without replacing
+the cart or checkout contracts.
+
 `FulfillmentCostQuoteProvider` is the read-only preflight seam for providers
 that can price an exact set of fulfillment lines and destination. Quotes expose
 normalized item, shipping, and adjustment costs, but deliberately do not claim
@@ -93,8 +105,7 @@ Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 
 - Additional supplier adapters and incremental catalog synchronization
 - Order lifecycle + production-stage state machine
-- `PaymentProvider` contract (Stripe adapter) + server-side re-pricing + webhook
-  fulfillment
+- Durable provider-webhook order orchestration over the server-repriced checkout
 - Discount-code engine
 - B2B quotes → deposit → fulfill
 - Branded transactional emails, proof-approval, `./drizzle` schema builders,
