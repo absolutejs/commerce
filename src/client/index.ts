@@ -2,3 +2,4 @@
 // `@absolutejs/commerce/client`.
 export * from "./cartStore";
 export * from "./storefrontCartStore";
+export * from "./storefrontOrderAccessStore";
