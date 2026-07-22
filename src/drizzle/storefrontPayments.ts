@@ -740,14 +740,13 @@ export const createStorefrontPaymentService = (options: {
           updated_at: timestamp,
         })
         .where(
+          // The lease is the compare-and-set guard. PostgreSQL timestamps can
+          // retain more precision than JavaScript Date, so updated_at cannot
+          // safely participate in the ownership predicate.
           and(
             eq(
               commercePaymentWebhookConnections.installation_id,
               candidate.installation_id,
-            ),
-            eq(
-              commercePaymentWebhookConnections.updated_at,
-              candidate.updated_at,
             ),
             or(
               isNull(
