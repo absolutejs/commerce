@@ -515,20 +515,30 @@ export const createStorefrontAftercareEvidenceService = (options: {
             .orderBy(desc(commerceStorefrontCaseAttachments.created_at))
         : [];
     },
-    listFleet: async () => ({
-      attachments: await options.db
-        .select()
-        .from(commerceStorefrontCaseAttachments)
-        .orderBy(desc(commerceStorefrontCaseAttachments.created_at)),
-      submissions: await options.db
-        .select()
-        .from(commerceStorefrontCaseEvidenceSubmissions)
-        .orderBy(desc(commerceStorefrontCaseEvidenceSubmissions.created_at)),
-      deadlinePolicies: await options.db
+    listFleet: async () => {
+      const deadlinePolicies = await options.db
         .select()
         .from(commerceStorefrontAftercarePolicies)
-        .orderBy(asc(commerceStorefrontAftercarePolicies.owner_key)),
-    }),
+        .orderBy(asc(commerceStorefrontAftercarePolicies.owner_key));
+
+      return {
+        attachments: await options.db
+          .select()
+          .from(commerceStorefrontCaseAttachments)
+          .orderBy(desc(commerceStorefrontCaseAttachments.created_at)),
+        submissions: await options.db
+          .select()
+          .from(commerceStorefrontCaseEvidenceSubmissions)
+          .orderBy(desc(commerceStorefrontCaseEvidenceSubmissions.created_at)),
+        deadlinePolicies: deadlinePolicies.map((record) => ({
+          ...record,
+          deadline_policy: normalizeStorefrontDisputeDeadlinePolicy({
+            ...defaultDeadlinePolicy,
+            ...record.deadline_policy,
+          }),
+        })),
+      };
+    },
     listOwner: async (ownerKey: string) => ({
       attachments: await options.db
         .select()
