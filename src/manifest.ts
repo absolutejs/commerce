@@ -29,7 +29,7 @@ export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
     peers: [
       {
         name: "drizzle-orm",
-        range: ">=0.30.0",
+        range: ">=1.0.0-rc.4",
         reason: "order/inventory tables and queries (the ./drizzle subpath)",
       },
     ],

@@ -12,12 +12,13 @@ import {
   createStorefrontCheckout,
   resolveStorefrontCart,
 } from "../core/storefront";
-import { and, eq } from "drizzle-orm";
+import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
   commercePaymentEvents,
   commercePaymentInstallations,
+  commercePaymentWebhookReceipts,
   commerceStorefrontFulfillmentJobs,
   commerceStorefrontOrders,
 } from "./index";
@@ -48,6 +49,45 @@ export type PaymentInstallation = {
   updated_at: Date;
   webhook_secret_alias: string;
 };
+
+export type PaymentInstallationPosture = PaymentInstallation & {
+  platformEnabled: boolean;
+  ready: boolean;
+  secretAvailable: boolean;
+  webhookSecretAvailable: boolean;
+};
+
+export type PaymentWebhookReceipt = {
+  appliedAt: Date | null;
+  attemptCount: number;
+  eventType: string;
+  id: string;
+  installationId: string;
+  lastError: string | null;
+  ownerKey: string;
+  providerEventId: string;
+  receivedAt: Date;
+  resultStatus: string | null;
+  status: string;
+  updatedAt: Date;
+};
+
+export const storefrontPaymentWebhookReceiptProjection = (
+  row: typeof commercePaymentWebhookReceipts.$inferSelect,
+): PaymentWebhookReceipt => ({
+  appliedAt: row.applied_at,
+  attemptCount: row.attempt_count,
+  eventType: row.event_type,
+  id: row.id,
+  installationId: row.installation_id,
+  lastError: row.last_error,
+  ownerKey: row.owner_key,
+  providerEventId: row.provider_event_id,
+  receivedAt: row.received_at,
+  resultStatus: row.result_status,
+  status: row.status,
+  updatedAt: row.updated_at,
+});
 
 export class StorefrontPaymentError extends Error {
   constructor(
@@ -91,6 +131,7 @@ export const createStorefrontPaymentService = (options: {
   paymentFor: (installation: PaymentInstallation) => Promise<PaymentProvider>;
 }) => {
   const enabled = options.enabled ?? false;
+  const WEBHOOK_PROCESSING_STALE_MS = 60_000;
   const installation = async (ownerKey: string, installationId?: string) => {
     const [row] = await options.db
       .select()
@@ -115,6 +156,249 @@ export const createStorefrontPaymentService = (options: {
       throw new StorefrontPaymentError("installation_disabled");
 
     return row;
+  };
+  const processVerifiedWebhook = async (
+    installed: PaymentInstallation,
+    ownerKey: string,
+    verified: PaymentWebhookEvent,
+  ) => {
+    const providerEventId =
+      verified.kind === "checkout" ? verified.checkout.id : verified.id;
+    const [known] = await options.db
+      .select({ id: commercePaymentEvents.id })
+      .from(commercePaymentEvents)
+      .where(
+        and(
+          eq(commercePaymentEvents.installation_id, installed.id),
+          eq(commercePaymentEvents.provider_event_id, providerEventId),
+        ),
+      )
+      .limit(1);
+    if (known && verified.kind === "dispute")
+      return { duplicate: true, status: "retained" };
+    if (verified.kind === "dispute") {
+      const [order] = await options.db
+        .select()
+        .from(commerceStorefrontOrders)
+        .where(
+          and(
+            eq(commerceStorefrontOrders.owner_key, ownerKey),
+            eq(commerceStorefrontOrders.installation_id, installed.id),
+            eq(
+              commerceStorefrontOrders.provider_payment_id,
+              verified.dispute.providerPaymentId,
+            ),
+          ),
+        )
+        .limit(1);
+      if (!order) throw new StorefrontPaymentError("payment_event_invalid");
+
+      return options.db.transaction(async (transaction) => {
+        const [accepted] = await transaction
+          .insert(commercePaymentEvents)
+          .values({
+            event: verified,
+            event_type: verified.type,
+            installation_id: installed.id,
+            intent_id: order.intent_id,
+            provider_event_id: verified.id,
+          })
+          .onConflictDoNothing()
+          .returning({ id: commercePaymentEvents.id });
+        if (!accepted) return { duplicate: true, status: "retained" };
+        const dispute = await recordStorefrontDispute(transaction, {
+          dispute: verified.dispute,
+          eventId: verified.id,
+          orderId: order.id,
+          ownerKey: order.owner_key,
+        });
+
+        return { duplicate: false, status: dispute.status };
+      });
+    }
+    const event: WebhookEvent = verified.checkout;
+    const intentId = event.session.metadata.checkoutIntentId;
+    if (!intentId || event.session.metadata.ownerKey !== ownerKey)
+      throw new StorefrontPaymentError("payment_event_invalid");
+    const [intent] = await options.db
+      .select()
+      .from(commerceCheckoutIntents)
+      .where(
+        and(
+          eq(commerceCheckoutIntents.id, intentId),
+          eq(commerceCheckoutIntents.owner_key, ownerKey),
+          eq(commerceCheckoutIntents.installation_id, installed.id),
+        ),
+      )
+      .limit(1);
+    if (!intent) throw new StorefrontPaymentError("checkout_not_found");
+    if (intent.provider_session_id !== event.session.id)
+      throw new StorefrontPaymentError("checkout_provider_mismatch");
+    if (
+      event.isComplete &&
+      (event.session.amountTotalCents !== intent.quote.subtotalCents ||
+        event.session.currency?.toUpperCase() !==
+          intent.quote.currency.toUpperCase())
+    )
+      throw new StorefrontPaymentError("payment_amount_mismatch");
+    if (known) return { duplicate: true, status: intent.status };
+    return options.db.transaction(async (transaction) => {
+      const [accepted] = await transaction
+        .insert(commercePaymentEvents)
+        .values({
+          event: verified,
+          event_type: event.type,
+          installation_id: installed.id,
+          intent_id: intent.id,
+          provider_event_id: event.id,
+        })
+        .onConflictDoNothing()
+        .returning({ id: commercePaymentEvents.id });
+      if (!accepted) return { duplicate: true, status: intent.status };
+      const status = event.isComplete
+        ? "paid"
+        : event.isFailed
+          ? "failed"
+          : intent.status;
+      await transaction
+        .update(commerceCheckoutIntents)
+        .set({ status, updated_at: new Date() })
+        .where(eq(commerceCheckoutIntents.id, intent.id));
+      if (!event.isComplete) return { duplicate: false, status };
+      const [order] = await transaction
+        .insert(commerceStorefrontOrders)
+        .values({
+          access_token_hash: intent.access_token_hash,
+          amount_cents: intent.quote.subtotalCents,
+          catalog_id: intent.catalog_id,
+          currency: intent.quote.currency,
+          customer_email: event.session.customerEmail,
+          customer_name: event.session.customerName,
+          intent_id: intent.id,
+          installation_id: installed.id,
+          lines: intent.quote.lines,
+          owner_key: intent.owner_key,
+          provider_session_id: event.session.id,
+          provider_payment_id: event.session.paymentReferenceId ?? null,
+          shipping: event.session.shippingAddress,
+          status: "paid",
+        })
+        .onConflictDoNothing()
+        .returning();
+      if (order)
+        await transaction
+          .insert(commerceStorefrontFulfillmentJobs)
+          .values({
+            order_id: order.id,
+            payload: {
+              cart: intent.cart,
+              customerEmail: event.session.customerEmail,
+              quote: intent.quote,
+              shipping: event.session.shippingAddress,
+            },
+          })
+          .onConflictDoNothing();
+      if (order)
+        await emitStorefrontOrderEvent(transaction, {
+          kind: "payment_confirmed",
+          orderId: order.id,
+          ownerKey: order.owner_key,
+        });
+
+      return { duplicate: false, status };
+    });
+  };
+  const applyReceipt = async (ownerKey: string, receiptId: string) => {
+    const [receipt] = await options.db
+      .select()
+      .from(commercePaymentWebhookReceipts)
+      .where(
+        and(
+          eq(commercePaymentWebhookReceipts.id, receiptId),
+          eq(commercePaymentWebhookReceipts.owner_key, ownerKey),
+        ),
+      )
+      .limit(1);
+    if (!receipt) throw new StorefrontPaymentError("payment_event_invalid");
+    const installed = await requireEnabled(ownerKey, receipt.installation_id);
+    const staleBefore = new Date(Date.now() - WEBHOOK_PROCESSING_STALE_MS);
+    const [claimed] = await options.db
+      .update(commercePaymentWebhookReceipts)
+      .set({
+        attempt_count: sql`${commercePaymentWebhookReceipts.attempt_count} + 1`,
+        last_error: null,
+        status: "processing",
+        updated_at: new Date(),
+      })
+      .where(
+        and(
+          eq(commercePaymentWebhookReceipts.id, receiptId),
+          eq(commercePaymentWebhookReceipts.owner_key, ownerKey),
+          eq(commercePaymentWebhookReceipts.installation_id, installed.id),
+          or(
+            inArray(commercePaymentWebhookReceipts.status, [
+              "failed",
+              "quarantined",
+              "received",
+              "retry",
+            ]),
+            and(
+              eq(commercePaymentWebhookReceipts.status, "processing"),
+              lte(commercePaymentWebhookReceipts.updated_at, staleBefore),
+            ),
+          ),
+        ),
+      )
+      .returning();
+    if (!claimed) {
+      const [current] = await options.db
+        .select()
+        .from(commercePaymentWebhookReceipts)
+        .where(
+          and(
+            eq(commercePaymentWebhookReceipts.id, receiptId),
+            eq(commercePaymentWebhookReceipts.owner_key, ownerKey),
+          ),
+        )
+        .limit(1);
+      if (!current) throw new StorefrontPaymentError("payment_event_invalid");
+
+      return {
+        duplicate: true,
+        status: current.result_status ?? current.status,
+      };
+    }
+    try {
+      const result = await processVerifiedWebhook(
+        installed,
+        ownerKey,
+        claimed.event,
+      );
+      await options.db
+        .update(commercePaymentWebhookReceipts)
+        .set({
+          applied_at: new Date(),
+          last_error: null,
+          result_status: result.status,
+          status: "applied",
+          updated_at: new Date(),
+        })
+        .where(eq(commercePaymentWebhookReceipts.id, claimed.id));
+
+      return result;
+    } catch (error) {
+      await options.db
+        .update(commercePaymentWebhookReceipts)
+        .set({
+          last_error:
+            error instanceof Error ? error.message : "Webhook apply failed",
+          status:
+            error instanceof StorefrontPaymentError ? "quarantined" : "failed",
+          updated_at: new Date(),
+        })
+        .where(eq(commercePaymentWebhookReceipts.id, claimed.id));
+      throw error;
+    }
   };
 
   return {
@@ -289,150 +573,99 @@ export const createStorefrontPaymentService = (options: {
           };
       const providerEventId =
         verified.kind === "checkout" ? verified.checkout.id : verified.id;
-      const [known] = await options.db
-        .select({ id: commercePaymentEvents.id })
-        .from(commercePaymentEvents)
-        .where(
-          and(
-            eq(commercePaymentEvents.installation_id, installed.id),
-            eq(commercePaymentEvents.provider_event_id, providerEventId),
-          ),
-        )
-        .limit(1);
-      if (known && verified.kind === "dispute")
-        return { duplicate: true, status: "retained" };
-      if (verified.kind === "dispute") {
-        const [order] = await options.db
-          .select()
-          .from(commerceStorefrontOrders)
-          .where(
-            and(
-              eq(commerceStorefrontOrders.owner_key, input.ownerKey),
-              eq(commerceStorefrontOrders.installation_id, installed.id),
-              eq(
-                commerceStorefrontOrders.provider_payment_id,
-                verified.dispute.providerPaymentId,
+      const [receipt] = await options.db
+        .insert(commercePaymentWebhookReceipts)
+        .values({
+          event: verified,
+          event_type:
+            verified.kind === "checkout"
+              ? verified.checkout.type
+              : verified.type,
+          installation_id: installed.id,
+          owner_key: input.ownerKey,
+          provider_event_id: providerEventId,
+        })
+        .onConflictDoNothing()
+        .returning({ id: commercePaymentWebhookReceipts.id });
+      const [retained] = receipt
+        ? [{ id: receipt.id }]
+        : await options.db
+            .select({ id: commercePaymentWebhookReceipts.id })
+            .from(commercePaymentWebhookReceipts)
+            .where(
+              and(
+                eq(
+                  commercePaymentWebhookReceipts.installation_id,
+                  installed.id,
+                ),
+                eq(
+                  commercePaymentWebhookReceipts.provider_event_id,
+                  providerEventId,
+                ),
               ),
-            ),
-          )
-          .limit(1);
-        if (!order) throw new StorefrontPaymentError("payment_event_invalid");
+            )
+            .limit(1);
+      if (!retained) throw new StorefrontPaymentError("payment_event_invalid");
 
-        return options.db.transaction(async (transaction) => {
-          const [accepted] = await transaction
-            .insert(commercePaymentEvents)
-            .values({
-              event: verified,
-              event_type: verified.type,
-              installation_id: installed.id,
-              intent_id: order.intent_id,
-              provider_event_id: verified.id,
-            })
-            .onConflictDoNothing()
-            .returning({ id: commercePaymentEvents.id });
-          if (!accepted) return { duplicate: true, status: "retained" };
-          const dispute = await recordStorefrontDispute(transaction, {
-            dispute: verified.dispute,
-            eventId: verified.id,
-            orderId: order.id,
-            ownerKey: order.owner_key,
-          });
-
-          return { duplicate: false, status: dispute.status };
-        });
-      }
-      const event: WebhookEvent = verified.checkout;
-      const intentId = event.session.metadata.checkoutIntentId;
-      if (!intentId || event.session.metadata.ownerKey !== input.ownerKey)
-        throw new StorefrontPaymentError("payment_event_invalid");
-      const [intent] = await options.db
-        .select()
-        .from(commerceCheckoutIntents)
-        .where(
-          and(
-            eq(commerceCheckoutIntents.id, intentId),
-            eq(commerceCheckoutIntents.owner_key, input.ownerKey),
-            eq(commerceCheckoutIntents.installation_id, installed.id),
-          ),
-        )
-        .limit(1);
-      if (!intent) throw new StorefrontPaymentError("checkout_not_found");
-      if (intent.provider_session_id !== event.session.id)
-        throw new StorefrontPaymentError("checkout_provider_mismatch");
-      if (
-        event.isComplete &&
-        (event.session.amountTotalCents !== intent.quote.subtotalCents ||
-          event.session.currency?.toUpperCase() !==
-            intent.quote.currency.toUpperCase())
-      )
-        throw new StorefrontPaymentError("payment_amount_mismatch");
-      if (known) return { duplicate: true, status: intent.status };
-      return options.db.transaction(async (transaction) => {
-        const [accepted] = await transaction
-          .insert(commercePaymentEvents)
-          .values({
-            event: verified,
-            event_type: event.type,
-            installation_id: installed.id,
-            intent_id: intent.id,
-            provider_event_id: event.id,
-          })
-          .onConflictDoNothing()
-          .returning({ id: commercePaymentEvents.id });
-        if (!accepted) return { duplicate: true, status: intent.status };
-        const status = event.isComplete
-          ? "paid"
-          : event.isFailed
-            ? "failed"
-            : intent.status;
-        await transaction
-          .update(commerceCheckoutIntents)
-          .set({ status, updated_at: new Date() })
-          .where(eq(commerceCheckoutIntents.id, intent.id));
-        if (!event.isComplete) return { duplicate: false, status };
-        const [order] = await transaction
-          .insert(commerceStorefrontOrders)
-          .values({
-            access_token_hash: intent.access_token_hash,
-            amount_cents: intent.quote.subtotalCents,
-            catalog_id: intent.catalog_id,
-            currency: intent.quote.currency,
-            customer_email: event.session.customerEmail,
-            customer_name: event.session.customerName,
-            intent_id: intent.id,
-            installation_id: installed.id,
-            lines: intent.quote.lines,
-            owner_key: intent.owner_key,
-            provider_session_id: event.session.id,
-            provider_payment_id: event.session.paymentReferenceId ?? null,
-            shipping: event.session.shippingAddress,
-            status: "paid",
-          })
-          .onConflictDoNothing()
-          .returning();
-        if (order)
-          await transaction
-            .insert(commerceStorefrontFulfillmentJobs)
-            .values({
-              order_id: order.id,
-              payload: {
-                cart: intent.cart,
-                customerEmail: event.session.customerEmail,
-                quote: intent.quote,
-                shipping: event.session.shippingAddress,
-              },
-            })
-            .onConflictDoNothing();
-        if (order)
-          await emitStorefrontOrderEvent(transaction, {
-            kind: "payment_confirmed",
-            orderId: order.id,
-            ownerKey: order.owner_key,
-          });
-
-        return { duplicate: false, status };
-      });
+      return applyReceipt(input.ownerKey, retained.id);
     },
+    listWebhookReceipts: async (
+      ownerKey?: string,
+    ): Promise<PaymentWebhookReceipt[]> => {
+      const rows = await options.db
+        .select()
+        .from(commercePaymentWebhookReceipts)
+        .where(
+          ownerKey
+            ? eq(commercePaymentWebhookReceipts.owner_key, ownerKey)
+            : undefined,
+        )
+        .orderBy(
+          asc(commercePaymentWebhookReceipts.status),
+          asc(commercePaymentWebhookReceipts.received_at),
+        );
+
+      return rows.map(storefrontPaymentWebhookReceiptProjection);
+    },
+    paymentInstallationPosture: async (
+      ownerKey?: string,
+    ): Promise<PaymentInstallationPosture[]> => {
+      const rows = ownerKey
+        ? await options.db
+            .select()
+            .from(commercePaymentInstallations)
+            .where(eq(commercePaymentInstallations.owner_key, ownerKey))
+        : await options.db.select().from(commercePaymentInstallations);
+
+      return Promise.all(
+        rows.map(async (candidate) => {
+          const [secretAvailable, webhookSecretAvailable] = await Promise.all([
+            options.credentialAvailable(
+              candidate.owner_key,
+              candidate.secret_alias,
+            ),
+            options.credentialAvailable(
+              candidate.owner_key,
+              candidate.webhook_secret_alias,
+            ),
+          ]);
+          const platformEnabled = enabled;
+
+          return {
+            ...candidate,
+            platformEnabled,
+            ready:
+              platformEnabled &&
+              candidate.status === "enabled" &&
+              secretAvailable &&
+              webhookSecretAvailable,
+            secretAvailable,
+            webhookSecretAvailable,
+          };
+        }),
+      );
+    },
+    retryWebhookReceipt: applyReceipt,
     saveInstallation: async (
       ownerKey: string,
       input: SavePaymentInstallationInput,

@@ -463,6 +463,36 @@ export const commercePaymentEvents = pgTable(
   ],
 );
 
+export const commercePaymentWebhookReceipts = pgTable(
+  "commerce_payment_webhook_receipts",
+  {
+    applied_at: timestamp(),
+    attempt_count: integer().notNull().default(0),
+    event: portableJsonb().$type<PaymentWebhookEvent>().notNull(),
+    event_type: varchar({ length: 120 }).notNull(),
+    id: uuid().defaultRandom().primaryKey(),
+    installation_id: uuid().notNull(),
+    last_error: text(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider_event_id: varchar({ length: 255 }).notNull(),
+    received_at: timestamp().notNull().defaultNow(),
+    result_status: varchar({ length: 40 }),
+    status: varchar({ length: 20 }).notNull().default("received"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("commerce_payment_webhook_receipts_installation_event_idx").on(
+      table.installation_id,
+      table.provider_event_id,
+    ),
+    index("commerce_payment_webhook_receipts_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+      table.updated_at,
+    ),
+  ],
+);
+
 export const commerceStorefrontOrders = pgTable(
   "commerce_storefront_orders",
   {
@@ -1323,6 +1353,7 @@ export const commerceDrizzleSchema = {
   fulfillmentVariantMappings: commerceFulfillmentVariantMappings,
   paymentEvents: commercePaymentEvents,
   paymentInstallations: commercePaymentInstallations,
+  paymentWebhookReceipts: commercePaymentWebhookReceipts,
   invoices: commerceInvoices,
   favorites: commerceFavorites,
   galleryItems: commerceGalleryItems,
