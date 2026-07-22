@@ -56,14 +56,27 @@ export type Catalog = {
 
 export type CatalogSource = {
   id: string;
+  ownerKey?: string | null;
   provider: string;
   name: string;
-  status: "active" | "paused" | "error";
+  status: "active" | "paused" | "syncing" | "error";
   /** Non-secret adapter configuration. Store credentials in the host secret store. */
   settings: Record<string, unknown>;
   cursor?: string | null;
   lastSyncedAt?: string | null;
   lastError?: string | null;
+  productsSynced?: number;
+  variantsSynced?: number;
+};
+
+export type CatalogTaxon = {
+  /** Provider-stable category, collection, or product-type identity. */
+  externalId: string;
+  name: string;
+  slug: string;
+  kind: "category" | "subcategory" | "product_type" | "other";
+  parentExternalId?: string | null;
+  metadata: Record<string, unknown>;
 };
 
 export type ProductMedia = {
@@ -179,6 +192,7 @@ export type InventoryLevel = {
 /** Implemented by supplier adapters such as SanMar or S&S Activewear. */
 export interface CatalogSourceProvider {
   readonly id: string;
+  listTaxonomy?(): Promise<CatalogTaxon[]>;
   listProducts(input?: {
     cursor?: string;
     limit?: number;

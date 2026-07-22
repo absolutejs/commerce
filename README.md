@@ -16,6 +16,8 @@ merchandising:
 - `CatalogCollection` organizes large assortments without duplicating products.
 - `CatalogSourceProvider` is the adapter contract for supplier feeds and live
   inventory.
+- Optional provider taxonomy discovery feeds durable categories and
+  subcategories without hardcoded provider lists.
 - Supplier sync checkpoints and batch variant upserts make large feed imports
   resumable and efficient; listing queries filter by search, brand, category,
   and product type.
@@ -25,14 +27,14 @@ tenant catalogs while every store remains independently merchandised.
 
 ```ts
 import {
-	findVariantByOptions,
-	listingPriceCents,
-	type CatalogSourceProvider,
+  findVariantByOptions,
+  listingPriceCents,
+  type CatalogSourceProvider,
 } from "@absolutejs/commerce";
 
 const variant = findVariantByOptions(product.variants, {
-	Color: "Navy",
-	Size: "XL",
+  Color: "Navy",
+  Size: "XL",
 });
 const price = listingPriceCents(product.listing, variant);
 ```
@@ -40,6 +42,11 @@ const price = listingPriceCents(product.listing, variant);
 The `@absolutejs/commerce/drizzle` export includes normalized catalog,
 products, variants, listings, collections, and collection-membership tables,
 plus idempotent supplier-ingestion and storefront query helpers.
+`synchronizeCatalogSource()` adds generation-fenced full synchronization,
+source-namespaced product/SKU identity for account-scoped costs, missing-item
+archival, durable run evidence, safe failure codes, and indexed database-backed
+search. The schema uses a portable JSON codec compatible with Bun SQL and other
+Postgres drivers.
 
 `FulfillmentCostQuoteProvider` is the read-only preflight seam for providers
 that can price an exact set of fulfillment lines and destination. Quotes expose
@@ -64,7 +71,7 @@ import type { ShippingProvider } from "@absolutejs/commerce";
 import { createEasyPostProvider } from "@absolutejs/commerce-easypost";
 
 const shipping: ShippingProvider = createEasyPostProvider({
-	apiKey: process.env.EASYPOST_API_KEY!,
+  apiKey: process.env.EASYPOST_API_KEY!,
 });
 
 const label = await shipping.buyCheapestLabel({ from, to, parcel });
