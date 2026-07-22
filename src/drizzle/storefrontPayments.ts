@@ -27,6 +27,19 @@ export type SavePaymentInstallationInput = {
   webhookSecretAlias: string;
 };
 
+export type PaymentInstallation = {
+  config: Record<string, unknown>;
+  created_at: Date;
+  id: string;
+  label: string;
+  owner_key: string;
+  provider: string;
+  secret_alias: string;
+  status: string;
+  updated_at: Date;
+  webhook_secret_alias: string;
+};
+
 export class StorefrontPaymentError extends Error {
   constructor(
     readonly code:
@@ -66,9 +79,7 @@ export const createStorefrontPaymentService = (options: {
   credentialAvailable: (ownerKey: string, alias: string) => Promise<boolean>;
   db: CommerceDb;
   enabled?: boolean;
-  paymentFor: (
-    installation: typeof commercePaymentInstallations.$inferSelect,
-  ) => Promise<PaymentProvider>;
+  paymentFor: (installation: PaymentInstallation) => Promise<PaymentProvider>;
 }) => {
   const enabled = options.enabled ?? false;
   const installation = async (ownerKey: string, installationId?: string) => {
@@ -188,26 +199,26 @@ export const createStorefrontPaymentService = (options: {
         throw error;
       }
     },
-    installationEnabled: async (ownerKey: string) => {
+    installationEnabled: async (ownerKey: string, installationId?: string) => {
       if (!enabled) return false;
       try {
-        await requireEnabled(ownerKey);
+        await requireEnabled(ownerKey, installationId);
 
         return true;
       } catch {
         return false;
       }
     },
-    listFleet: () =>
-      options.db
+    listFleet: async (): Promise<PaymentInstallation[]> =>
+      await options.db
         .select()
         .from(commercePaymentInstallations)
         .orderBy(
           commercePaymentInstallations.owner_key,
           commercePaymentInstallations.label,
         ),
-    listOwner: (ownerKey: string) =>
-      options.db
+    listOwner: async (ownerKey: string): Promise<PaymentInstallation[]> =>
+      await options.db
         .select()
         .from(commercePaymentInstallations)
         .where(eq(commercePaymentInstallations.owner_key, ownerKey)),
