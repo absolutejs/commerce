@@ -546,6 +546,10 @@ export const commerceStorefrontOrderActions = pgTable(
       table.owner_key,
       table.idempotency_key,
     ),
+    uniqueIndex("commerce_storefront_order_actions_order_type_idx").on(
+      table.order_id,
+      table.type,
+    ),
     index("commerce_storefront_order_actions_status_next_idx").on(
       table.status,
       table.next_attempt_at,

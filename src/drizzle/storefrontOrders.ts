@@ -569,9 +569,18 @@ export const createStorefrontOrderService = (options: {
             .where(
               and(
                 eq(commerceStorefrontOrderActions.owner_key, input.ownerKey),
-                eq(
-                  commerceStorefrontOrderActions.idempotency_key,
-                  input.idempotencyKey,
+                or(
+                  eq(
+                    commerceStorefrontOrderActions.idempotency_key,
+                    input.idempotencyKey,
+                  ),
+                  and(
+                    eq(commerceStorefrontOrderActions.order_id, order.id),
+                    eq(
+                      commerceStorefrontOrderActions.type,
+                      "cancel_refund",
+                    ),
+                  ),
                 ),
               ),
             )
