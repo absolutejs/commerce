@@ -45,6 +45,12 @@ export type StorefrontCaseEvidenceStatus =
   | "staged"
   | "submitted";
 
+export type StorefrontDisputeDeadlinePolicy = {
+  alertsEnabled: boolean;
+  overdueEnabled: boolean;
+  warningHours: number[];
+};
+
 export type StorefrontCaseEvidenceText = Partial<{
   accessActivityLog: string;
   billingAddress: string;

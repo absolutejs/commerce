@@ -2,6 +2,7 @@ import type {
   StorefrontCaseAttachmentPurpose,
   StorefrontCaseEvidenceText,
   StorefrontCaseStatus,
+  StorefrontDisputeDeadlinePolicy,
 } from "../core/aftercare";
 import type {
   PaymentDisputeEvidenceFile,
@@ -23,6 +24,7 @@ import {
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
+  commerceStorefrontAftercarePolicies,
   commerceStorefrontCaseAttachments,
   commerceStorefrontCaseEvidenceSubmissions,
   commerceStorefrontCaseEvents,
@@ -37,8 +39,15 @@ import { storefrontOrderAccessTokenHash } from "./storefrontOrders";
 
 const DEFAULT_CYCLE_LIMIT = 10;
 const DEFAULT_LEASE_MS = 60_000;
-const DEFAULT_DEADLINE_WINDOW_MS = 72 * 60 * 60 * 1_000;
-const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
+const HOUR_MS = 60 * 60 * 1_000;
+const MAX_DEADLINE_WARNING_HOURS = 720;
+const MAX_DEADLINE_WARNINGS = 6;
+const DEFAULT_DEADLINE_WINDOW_MS = MAX_DEADLINE_WARNING_HOURS * HOUR_MS;
+const defaultDeadlinePolicy: StorefrontDisputeDeadlinePolicy = {
+  alertsEnabled: true,
+  overdueEnabled: true,
+  warningHours: [72, 24],
+};
 const terminalStatuses: StorefrontCaseStatus[] = [
   "closed",
   "rejected",
@@ -55,6 +64,27 @@ type InspectionResult = {
   scanner: string;
   signature?: string;
   verdict: "clean" | "infected" | "unavailable";
+};
+
+export const normalizeStorefrontDisputeDeadlinePolicy = (
+  policy: StorefrontDisputeDeadlinePolicy,
+): StorefrontDisputeDeadlinePolicy => {
+  const warningHours = [...new Set(policy.warningHours)].sort(
+    (left, right) => right - left,
+  );
+  if (
+    warningHours.length === 0 ||
+    warningHours.length > MAX_DEADLINE_WARNINGS ||
+    warningHours.some(
+      (hours) =>
+        !Number.isSafeInteger(hours) ||
+        hours < 1 ||
+        hours > MAX_DEADLINE_WARNING_HOURS,
+    )
+  )
+    throw new StorefrontAftercareError("deadline_policy_invalid");
+
+  return { ...policy, warningHours };
 };
 
 const canonical = (value: unknown): string => {
@@ -102,6 +132,16 @@ export const createStorefrontAftercareEvidenceService = (options: {
   const evidenceEnabled = options.evidenceEnabled ?? false;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const now = options.now ?? (() => new Date());
+
+  const deadlinePolicyFor = async (ownerKey: string) => {
+    const [record] = await options.db
+      .select({ policy: commerceStorefrontAftercarePolicies.deadline_policy })
+      .from(commerceStorefrontAftercarePolicies)
+      .where(eq(commerceStorefrontAftercarePolicies.owner_key, ownerKey))
+      .limit(1);
+
+    return record?.policy ?? defaultDeadlinePolicy;
+  };
 
   const caseFor = async (ownerKey: string, caseId: string) => {
     const [entry] = await options.db
@@ -465,6 +505,10 @@ export const createStorefrontAftercareEvidenceService = (options: {
         .select()
         .from(commerceStorefrontCaseEvidenceSubmissions)
         .orderBy(desc(commerceStorefrontCaseEvidenceSubmissions.created_at)),
+      deadlinePolicies: await options.db
+        .select()
+        .from(commerceStorefrontAftercarePolicies)
+        .orderBy(asc(commerceStorefrontAftercarePolicies.owner_key)),
     }),
     listOwner: async (ownerKey: string) => ({
       attachments: await options.db
@@ -479,7 +523,24 @@ export const createStorefrontAftercareEvidenceService = (options: {
           eq(commerceStorefrontCaseEvidenceSubmissions.owner_key, ownerKey),
         )
         .orderBy(desc(commerceStorefrontCaseEvidenceSubmissions.created_at)),
+      deadlinePolicy: await deadlinePolicyFor(ownerKey),
     }),
+    setDeadlinePolicy: async (
+      ownerKey: string,
+      policy: StorefrontDisputeDeadlinePolicy,
+    ) => {
+      const deadlinePolicy = normalizeStorefrontDisputeDeadlinePolicy(policy);
+      const [record] = await options.db
+        .insert(commerceStorefrontAftercarePolicies)
+        .values({ deadline_policy: deadlinePolicy, owner_key: ownerKey })
+        .onConflictDoUpdate({
+          set: { deadline_policy: deadlinePolicy, updated_at: now() },
+          target: commerceStorefrontAftercarePolicies.owner_key,
+        })
+        .returning();
+
+      return record!;
+    },
     queueEvidence: async (input: {
       attachmentIds: string[];
       caseId: string;
@@ -635,6 +696,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
         .set({
           last_error: null,
           lease_expires_at: null,
+          reconciliation_diagnostics: null,
           reconciled_at: null,
           status: "reconciliation_pending",
           updated_at: now(),
@@ -675,6 +737,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
         .set({
           last_error: null,
           next_attempt_at: now(),
+          reconciliation_diagnostics: null,
           reconciled_at: null,
           status: "retry",
           updated_at: now(),
@@ -697,10 +760,8 @@ export const createStorefrontAftercareEvidenceService = (options: {
       if (!deadlinesEnabled)
         throw new StorefrontAftercareError("aftercare_disabled");
       const timestamp = now();
-      const results: Array<{
-        bucket: "24h" | "72h" | "overdue";
-        caseId: string;
-      }> = [];
+      const results: Array<{ bucket: string; caseId: string }> = [];
+      const policies = new Map<string, StorefrontDisputeDeadlinePolicy>();
       const pageSize = Math.max(limit, DEFAULT_CYCLE_LIMIT);
       for (let offset = 0; results.length < limit; offset += pageSize) {
         const cases = await options.db
@@ -724,13 +785,25 @@ export const createStorefrontAftercareEvidenceService = (options: {
           .limit(pageSize)
           .offset(offset);
         for (const caseEntry of cases) {
+          let policy = policies.get(caseEntry.owner_key);
+          if (!policy) {
+            policy = await deadlinePolicyFor(caseEntry.owner_key);
+            policies.set(caseEntry.owner_key, policy);
+          }
+          if (!policy.alertsEnabled) continue;
           const remaining = caseEntry.due_at!.getTime() - timestamp.getTime();
+          const warning = policy.warningHours
+            .filter((hours) => remaining <= hours * HOUR_MS)
+            .at(-1);
           const bucket =
             remaining <= 0
-              ? "overdue"
-              : remaining <= ONE_DAY_MS
-                ? "24h"
-                : "72h";
+              ? policy.overdueEnabled
+                ? "overdue"
+                : undefined
+              : warning
+                ? `${warning}h`
+                : undefined;
+          if (!bucket) continue;
           const eventKey = `evidence-deadline:${caseEntry.due_at!.toISOString()}:${bucket}`;
           const [existing] = await options.db
             .select({ id: commerceStorefrontCaseEvents.id })
@@ -815,6 +888,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
                 lease_expires_at: null,
                 provider_file_ids: result.providerFileIds,
                 provider_status: result.providerStatus,
+                reconciliation_diagnostics: result.diagnostics,
                 reconciled_at: now(),
                 status,
                 submission_count: result.submissionCount,
@@ -842,6 +916,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
                   "Provider reconciliation confirmed the evidence effect was not applied",
                 lease_expires_at: null,
                 provider_status: result.providerStatus,
+                reconciliation_diagnostics: result.diagnostics,
                 reconciled_at: now(),
                 status: "quarantined",
                 submission_count: result.submissionCount,
@@ -865,6 +940,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
                   ? error.message
                   : "Evidence reconciliation failed",
               lease_expires_at: null,
+              reconciliation_diagnostics: null,
               reconciled_at: null,
               status: "quarantined",
               updated_at: now(),

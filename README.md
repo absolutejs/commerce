@@ -109,9 +109,12 @@ deletes through a host-supplied blob boundary. Dispute evidence jobs accept
 only clean case-owned attachments, preserve stable provider idempotency, and
 quarantine ambiguous submission outcomes. A retry is prohibited until a leased
 provider reconciliation confirms the intended effect was not applied; applied
-effects converge on the retained staged/submitted record. The same service
-emits idempotent 72-hour, 24-hour, and overdue deadline events through the case
-event substrate. Provider adapters implement `reconcileDisputeEvidence` and
+effects converge on the retained staged/submitted record. Reconciliation also
+retains non-secret field/purpose mismatch diagnostics without copying customer
+evidence values into operational metadata. Tenant-owned deadline policies
+control whether alerts run, whether overdue alerts are emitted, and up to six
+unique warning thresholds from 1 to 720 hours. The service emits idempotent
+deadline events through the case event substrate. Provider adapters implement `reconcileDisputeEvidence` and
 `submitDisputeEvidence`; the host independently gates reconciliation, staging,
 and final payment-network submission.
 

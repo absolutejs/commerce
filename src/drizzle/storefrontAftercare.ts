@@ -46,6 +46,7 @@ export class StorefrontAftercareError extends Error {
       | "evidence_reconciliation_required"
       | "evidence_not_retryable"
       | "evidence_not_supported"
+      | "deadline_policy_invalid"
       | "order_access_denied"
       | "order_not_found",
   ) {

@@ -33,6 +33,7 @@ import type {
   CheckoutResult,
   CheckoutSession,
   PaymentWebhookEvent,
+  PaymentDisputeEvidenceReconciliationDiagnostics,
   WebhookEvent,
 } from "../core/payment";
 import type {
@@ -46,6 +47,7 @@ import type {
   StorefrontCaseEvidenceStatus,
   StorefrontCaseEvidenceText,
   StorefrontCaseResolution,
+  StorefrontDisputeDeadlinePolicy,
 } from "../core/aftercare";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
@@ -763,6 +765,8 @@ export const commerceStorefrontCaseEvidenceSubmissions = pgTable(
       .notNull()
       .default({}),
     provider_status: varchar({ length: 80 }),
+    reconciliation_diagnostics:
+      portableJsonb().$type<PaymentDisputeEvidenceReconciliationDiagnostics>(),
     reconciled_at: timestamp({ precision: 3, withTimezone: true }),
     submission_count: integer(),
     submit: boolean().notNull().default(false),
@@ -791,6 +795,27 @@ export const commerceStorefrontCaseEvidenceSubmissions = pgTable(
       table.created_at,
     ),
   ],
+);
+
+export const commerceStorefrontAftercarePolicies = pgTable(
+  "commerce_storefront_aftercare_policies",
+  {
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deadline_policy: portableJsonb()
+      .$type<StorefrontDisputeDeadlinePolicy>()
+      .notNull()
+      .default({
+        alertsEnabled: true,
+        overdueEnabled: true,
+        warningHours: [72, 24],
+      }),
+    owner_key: varchar({ length: 160 }).primaryKey(),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
 );
 
 export const commerceStorefrontCaseEvents = pgTable(
@@ -1267,6 +1292,7 @@ export const commerceDrizzleSchema = {
   subscribers: commerceSubscribers,
   storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
   storefrontCaseAttachments: commerceStorefrontCaseAttachments,
+  storefrontAftercarePolicies: commerceStorefrontAftercarePolicies,
   storefrontCaseEvidenceSubmissions: commerceStorefrontCaseEvidenceSubmissions,
   storefrontCaseEvents: commerceStorefrontCaseEvents,
   storefrontCaseMessages: commerceStorefrontCaseMessages,

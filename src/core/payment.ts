@@ -123,9 +123,19 @@ export type PaymentDisputeEvidenceResult = {
   submitted: boolean;
 };
 
+export type PaymentDisputeEvidenceReconciliationDiagnostics = {
+  hasEvidence: boolean;
+  mismatches: Array<{
+    field: string;
+    reason: "different" | "missing";
+    scope: "file" | "text";
+  }>;
+};
+
 export type PaymentDisputeEvidenceReconciliation =
   PaymentDisputeEvidenceResult & {
     applied: boolean;
+    diagnostics: PaymentDisputeEvidenceReconciliationDiagnostics;
   };
 
 export type PaymentWebhookEvent =
