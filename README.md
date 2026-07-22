@@ -72,6 +72,14 @@ webhooks are verified before persistence, deduplicated by provider event id,
 and transactionally create one paid order and one pending fulfillment job after
 checking the tenant, installation, session, amount, and currency.
 
+`createStorefrontFulfillmentService()` owns the separately gated provider-effect
+boundary after payment. It leases pending jobs with compare-and-set ownership,
+quarantines expired or ambiguous submissions, validates a host-prepared exact
+provider request before submission, and polls retained provider order IDs until
+terminal state. Retry and quarantine controls are tenant fenced; provider
+credentials are resolved only after both the platform gate and installation are
+enabled.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing
@@ -113,7 +121,7 @@ Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 
 - Additional supplier adapters and incremental catalog synchronization
 - Order lifecycle + production-stage state machine
-- Fulfillment-worker leasing and provider submission for pending storefront jobs
+- Multi-provider storefront order splitting and fulfillment webhook ingestion
 - Discount-code engine
 - B2B quotes → deposit → fulfill
 - Branded transactional emails, proof-approval, `./drizzle` schema builders,

@@ -34,6 +34,10 @@ import type {
   CheckoutSession,
   WebhookEvent,
 } from "../core/payment";
+import type {
+  FulfillmentOrder,
+  FulfillmentOrderRequest,
+} from "../core/fulfillment";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
 // parameters. This portable boundary preserves typed JSON for Bun, node-postgres,
@@ -480,12 +484,19 @@ export const commerceStorefrontFulfillmentJobs = pgTable(
   "commerce_storefront_fulfillment_jobs",
   {
     attempts: integer().notNull().default(0),
+    completed_at: timestamp(),
     created_at: timestamp().notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
+    installation_id: uuid(),
+    last_attempt_at: timestamp(),
     last_error: text(),
     lease_expires_at: timestamp(),
+    next_attempt_at: timestamp(),
     order_id: uuid().notNull(),
     payload: portableJsonb().$type<Record<string, unknown>>().notNull(),
+    provider_order_id: varchar({ length: 255 }),
+    request: portableJsonb().$type<FulfillmentOrderRequest>(),
+    result: portableJsonb().$type<FulfillmentOrder>(),
     status: varchar({ length: 20 }).notNull().default("pending"),
     updated_at: timestamp().notNull().defaultNow(),
     worker_id: varchar({ length: 160 }),
@@ -498,21 +509,42 @@ export const commerceStorefrontFulfillmentJobs = pgTable(
       table.status,
       table.lease_expires_at,
     ),
+    index("commerce_storefront_fulfillment_jobs_status_next_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
   ],
 );
 
 // Merchant-scoped fulfillment connection. Secrets stay in the host secret
 // store; config only contains non-secret routing/default settings.
-export const commerceFulfillmentAccounts = pgTable("fulfillment_accounts", {
-  config: portableJsonb().$type<Record<string, unknown>>().default({}),
-  created_at: timestamp().notNull().defaultNow(),
-  id: uuid().defaultRandom().primaryKey(),
-  label: varchar({ length: 160 }).notNull(),
-  owner_key: varchar({ length: 160 }),
-  provider: varchar({ length: 120 }).notNull(),
-  status: varchar({ length: 20 }).notNull().default("active"),
-  updated_at: timestamp().notNull().defaultNow(),
-});
+export const commerceFulfillmentAccounts = pgTable(
+  "fulfillment_accounts",
+  {
+    config: portableJsonb()
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    label: varchar({ length: 160 }).notNull(),
+    owner_key: varchar({ length: 160 }),
+    provider: varchar({ length: 120 }).notNull(),
+    secret_alias: varchar({ length: 120 }),
+    status: varchar({ length: 20 }).notNull().default("disabled"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("fulfillment_accounts_owner_provider_idx").on(
+      table.owner_key,
+      table.provider,
+    ),
+    index("fulfillment_accounts_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+  ],
+);
 
 // Maps a canonical commerce variant to an exact provider-side SKU.
 export const commerceFulfillmentVariantMappings = pgTable(
@@ -921,4 +953,5 @@ export * from "./queries";
 export * from "./catalogQueries";
 export * from "./storefrontMerchandising";
 export * from "./storefrontPayments";
+export * from "./storefrontFulfillment";
 export * from "./catalogSync";
