@@ -543,7 +543,10 @@ export const createStorefrontPaymentService = (options: {
 
     return { connection: updated ?? connection, drift };
   };
-  const runSigningSecretCanary = async (installed: PaymentInstallation) => {
+  const runSigningSecretCanary = async (
+    installed: PaymentInstallation,
+    successStatus: string,
+  ) => {
     if (!options.verifyWebhookSigningSecret)
       throw new StorefrontPaymentError("webhook_management_unavailable");
     const passed = await options.verifyWebhookSigningSecret(installed);
@@ -553,7 +556,7 @@ export const createStorefrontPaymentService = (options: {
         canary_status: passed ? "passed" : "failed",
         last_canary_at: new Date(),
         last_error: passed ? null : "Signing-secret canary failed",
-        status: passed ? "staged" : "failed",
+        status: passed ? successStatus : "failed",
         updated_at: new Date(),
       })
       .where(
@@ -1013,7 +1016,7 @@ export const createStorefrontPaymentService = (options: {
           installed.webhook_secret_alias,
           created.signingSecret,
         );
-        await runSigningSecretCanary(installed);
+        await runSigningSecretCanary(installed, "staged");
         const enabledEndpoint = await manager.update(created.id, {
           disabled: false,
           enabledEvents: normalizedEvents(connection.desired_events),
@@ -1061,8 +1064,11 @@ export const createStorefrontPaymentService = (options: {
       if (!webhookManagementEnabled)
         throw new StorefrontPaymentError("webhook_management_disabled");
       const installed = await installation(ownerKey, installationId);
-      await webhookConnection(ownerKey, installationId);
-      await runSigningSecretCanary(installed);
+      const connection = await webhookConnection(ownerKey, installationId);
+      await runSigningSecretCanary(
+        installed,
+        connection.status === "healthy" ? "healthy" : "staged",
+      );
 
       return webhookConnection(ownerKey, installationId);
     },
