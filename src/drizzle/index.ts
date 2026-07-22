@@ -464,7 +464,7 @@ export const commerceStorefrontOrders = pgTable(
     owner_key: varchar({ length: 160 }).notNull(),
     provider_session_id: varchar({ length: 255 }).notNull(),
     shipping: portableJsonb().$type<CheckoutSession["shippingAddress"]>(),
-    status: varchar({ length: 20 }).notNull().default("paid"),
+    status: varchar({ length: 40 }).notNull().default("paid"),
     updated_at: timestamp().notNull().defaultNow(),
   },
   (table) => [
