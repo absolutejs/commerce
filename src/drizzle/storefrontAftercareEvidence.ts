@@ -25,6 +25,7 @@ import {
   commerceCheckoutIntents,
   commerceStorefrontCaseAttachments,
   commerceStorefrontCaseEvidenceSubmissions,
+  commerceStorefrontCaseEvents,
   commerceStorefrontCases,
   commerceStorefrontOrders,
 } from "./index";
@@ -692,47 +693,72 @@ export const createStorefrontAftercareEvidenceService = (options: {
 
       return retried;
     },
-    runDeadlineCycle: async () => {
+    runDeadlineCycle: async (limit = DEFAULT_CYCLE_LIMIT) => {
       if (!deadlinesEnabled)
         throw new StorefrontAftercareError("aftercare_disabled");
       const timestamp = now();
-      const cases = await options.db
-        .select()
-        .from(commerceStorefrontCases)
-        .where(
-          and(
-            eq(commerceStorefrontCases.kind, "dispute"),
-            isNotNull(commerceStorefrontCases.due_at),
-            lte(
-              commerceStorefrontCases.due_at,
-              new Date(timestamp.getTime() + deadlineWindowMs),
-            ),
-            notInArray(commerceStorefrontCases.status, terminalStatuses),
-          ),
-        )
-        .orderBy(asc(commerceStorefrontCases.due_at))
-        .limit(DEFAULT_CYCLE_LIMIT);
       const results: Array<{
         bucket: "24h" | "72h" | "overdue";
         caseId: string;
       }> = [];
-      for (const caseEntry of cases) {
-        const remaining = caseEntry.due_at!.getTime() - timestamp.getTime();
-        const bucket =
-          remaining <= 0 ? "overdue" : remaining <= ONE_DAY_MS ? "24h" : "72h";
-        await emitStorefrontCaseEvent(options.db, {
-          caseId: caseEntry.id,
-          eventKey: `evidence-deadline:${caseEntry.due_at!.toISOString()}:${bucket}`,
-          kind: "evidence_deadline",
-          orderId: caseEntry.order_id,
-          ownerKey: caseEntry.owner_key,
-          payload: {
-            bucket,
-            dueAt: caseEntry.due_at!.toISOString(),
-            providerStatus: caseEntry.provider_status,
-          },
-        });
-        results.push({ bucket, caseId: caseEntry.id });
+      const pageSize = Math.max(limit, DEFAULT_CYCLE_LIMIT);
+      for (let offset = 0; results.length < limit; offset += pageSize) {
+        const cases = await options.db
+          .select()
+          .from(commerceStorefrontCases)
+          .where(
+            and(
+              eq(commerceStorefrontCases.kind, "dispute"),
+              isNotNull(commerceStorefrontCases.due_at),
+              lte(
+                commerceStorefrontCases.due_at,
+                new Date(timestamp.getTime() + deadlineWindowMs),
+              ),
+              notInArray(commerceStorefrontCases.status, terminalStatuses),
+            ),
+          )
+          .orderBy(
+            asc(commerceStorefrontCases.due_at),
+            asc(commerceStorefrontCases.id),
+          )
+          .limit(pageSize)
+          .offset(offset);
+        for (const caseEntry of cases) {
+          const remaining = caseEntry.due_at!.getTime() - timestamp.getTime();
+          const bucket =
+            remaining <= 0
+              ? "overdue"
+              : remaining <= ONE_DAY_MS
+                ? "24h"
+                : "72h";
+          const eventKey = `evidence-deadline:${caseEntry.due_at!.toISOString()}:${bucket}`;
+          const [existing] = await options.db
+            .select({ id: commerceStorefrontCaseEvents.id })
+            .from(commerceStorefrontCaseEvents)
+            .where(
+              and(
+                eq(commerceStorefrontCaseEvents.case_id, caseEntry.id),
+                eq(commerceStorefrontCaseEvents.event_key, eventKey),
+              ),
+            )
+            .limit(1);
+          if (existing) continue;
+          await emitStorefrontCaseEvent(options.db, {
+            caseId: caseEntry.id,
+            eventKey,
+            kind: "evidence_deadline",
+            orderId: caseEntry.order_id,
+            ownerKey: caseEntry.owner_key,
+            payload: {
+              bucket,
+              dueAt: caseEntry.due_at!.toISOString(),
+              providerStatus: caseEntry.provider_status,
+            },
+          });
+          results.push({ bucket, caseId: caseEntry.id });
+          if (results.length >= limit) break;
+        }
+        if (cases.length < pageSize) break;
       }
 
       return results;
