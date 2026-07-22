@@ -608,9 +608,11 @@ export const commerceStorefrontCases = pgTable(
   "commerce_storefront_cases",
   {
     assigned_to: varchar({ length: 200 }),
-    closed_at: timestamp({ withTimezone: true }),
-    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
-    due_at: timestamp({ withTimezone: true }),
+    closed_at: timestamp({ precision: 3, withTimezone: true }),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    due_at: timestamp({ precision: 3, withTimezone: true }),
     id: uuid().defaultRandom().primaryKey(),
     idempotency_key: varchar({ length: 200 }).notNull(),
     kind: varchar({ length: 30 }).notNull(),
@@ -624,7 +626,9 @@ export const commerceStorefrontCases = pgTable(
     resolution: portableJsonb().$type<StorefrontCaseResolution>(),
     status: varchar({ length: 30 }).notNull().default("open"),
     subject: varchar({ length: 240 }).notNull(),
-    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_storefront_cases_owner_idempotency_idx").on(
@@ -658,7 +662,9 @@ export const commerceStorefrontCaseMessages = pgTable(
     author_ref: varchar({ length: 200 }).notNull(),
     body: text().notNull(),
     case_id: uuid().notNull(),
-    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     idempotency_key: varchar({ length: 200 }).notNull(),
     internal: boolean().notNull().default(false),
@@ -681,14 +687,16 @@ export const commerceStorefrontCaseEvents = pgTable(
   {
     attempts: integer().notNull().default(0),
     case_id: uuid().notNull(),
-    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
     event_key: varchar({ length: 220 }).notNull(),
     id: uuid().defaultRandom().primaryKey(),
     kind: varchar({ length: 50 }).notNull(),
     last_error: text(),
-    lease_expires_at: timestamp({ withTimezone: true }),
-    next_attempt_at: timestamp({ withTimezone: true }),
-    notified_at: timestamp({ withTimezone: true }),
+    lease_expires_at: timestamp({ precision: 3, withTimezone: true }),
+    next_attempt_at: timestamp({ precision: 3, withTimezone: true }),
+    notified_at: timestamp({ precision: 3, withTimezone: true }),
     order_id: uuid().notNull(),
     owner_key: varchar({ length: 160 }).notNull(),
     payload: portableJsonb()
@@ -696,7 +704,9 @@ export const commerceStorefrontCaseEvents = pgTable(
       .notNull()
       .default({}),
     status: varchar({ length: 30 }).notNull().default("pending"),
-    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
     worker_id: varchar({ length: 160 }),
   },
   (table) => [
