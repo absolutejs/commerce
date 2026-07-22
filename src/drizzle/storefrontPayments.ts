@@ -147,8 +147,8 @@ export const createStorefrontPaymentService = (options: {
       }
       const quote =
         existing?.quote ?? resolveStorefrontCart(input.storefront, input.lines);
-      const [intent] = existing
-        ? [existing]
+      const [created] = existing
+        ? []
         : await options.db
             .insert(commerceCheckoutIntents)
             .values({
@@ -160,8 +160,30 @@ export const createStorefrontPaymentService = (options: {
               quote,
               request_digest: requestDigest,
             })
+            .onConflictDoNothing()
             .returning();
+      const [raced] =
+        existing || created
+          ? []
+          : await options.db
+              .select()
+              .from(commerceCheckoutIntents)
+              .where(
+                and(
+                  eq(commerceCheckoutIntents.owner_key, input.ownerKey),
+                  eq(
+                    commerceCheckoutIntents.idempotency_key,
+                    input.idempotencyKey,
+                  ),
+                ),
+              )
+              .limit(1);
+      const intent = existing ?? created ?? raced;
       if (!intent) throw new StorefrontPaymentError("checkout_not_found");
+      if (intent.request_digest !== requestDigest)
+        throw new StorefrontPaymentError("checkout_identity_conflict");
+      if (intent.checkout_result)
+        return { checkout: intent.checkout_result, quote: intent.quote };
       try {
         const result = await createStorefrontCheckout({
           cancelUrl: input.cancelUrl,
