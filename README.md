@@ -48,6 +48,15 @@ archival, durable run evidence, safe failure codes, and indexed database-backed
 search. The schema uses a portable JSON codec compatible with Bun SQL and other
 Postgres drivers.
 
+`createStorefrontMerchandisingService()` is the tenant-fenced authoring and
+publication boundary. It owns draft/active/archive workflows for catalogs,
+listings, collections, membership ordering, price overrides, approved artwork,
+allowed placements, and buyer fields. A listing cannot publish unless its
+owner-scoped supplier product is active with an available variant; a storefront
+cannot publish without a ready listing. Published projections contain only
+active product truth and available variants, while fleet posture identifies an
+active storefront that later became unhealthy after a supplier sync.
+
 `FulfillmentCostQuoteProvider` is the read-only preflight seam for providers
 that can price an exact set of fulfillment lines and destination. Quotes expose
 normalized item, shipping, and adjustment costs, but deliberately do not claim
@@ -82,7 +91,7 @@ const label = await shipping.buyCheapestLabel({ from, to, parcel });
 
 Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 
-- Supplier adapters and scheduled catalog synchronization
+- Additional supplier adapters and incremental catalog synchronization
 - Order lifecycle + production-stage state machine
 - `PaymentProvider` contract (Stripe adapter) + server-side re-pricing + webhook
   fulfillment

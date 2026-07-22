@@ -19,7 +19,12 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-import type { BrandKit, DecorationArea, ProductMedia } from "../core/catalog";
+import type {
+  BrandKit,
+  CatalogCustomizationPolicy,
+  DecorationArea,
+  ProductMedia,
+} from "../core/catalog";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
 // parameters. This portable boundary preserves typed JSON for Bun, node-postgres,
@@ -74,19 +79,32 @@ export const commerceCompanies = pgTable("companies", {
 
 // A storefront/tenant catalog. Canonical products may be listed in any number
 // of catalogs with different copy, prices, approved art, and visibility.
-export const commerceCatalogs = pgTable("commerce_catalogs", {
-  brand_kit: portableJsonb().$type<BrandKit>(),
-  created_at: timestamp().notNull().defaultNow(),
-  currency: varchar({ length: 10 }).notNull().default("USD"),
-  id: uuid().defaultRandom().primaryKey(),
-  locale: varchar({ length: 20 }).notNull().default("en-US"),
-  name: varchar({ length: 200 }).notNull(),
-  owner_key: varchar({ length: 160 }),
-  settings: portableJsonb().$type<Record<string, unknown>>().default({}),
-  slug: varchar({ length: 120 }).notNull().unique(),
-  status: varchar({ length: 20 }).notNull().default("draft"),
-  updated_at: timestamp().notNull().defaultNow(),
-});
+export const commerceCatalogs = pgTable(
+  "commerce_catalogs",
+  {
+    brand_kit: portableJsonb().$type<BrandKit>(),
+    created_at: timestamp().notNull().defaultNow(),
+    currency: varchar({ length: 10 }).notNull().default("USD"),
+    id: uuid().defaultRandom().primaryKey(),
+    locale: varchar({ length: 20 }).notNull().default("en-US"),
+    name: varchar({ length: 200 }).notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    settings: portableJsonb().$type<Record<string, unknown>>().default({}),
+    slug: varchar({ length: 120 }).notNull(),
+    status: varchar({ length: 20 }).notNull().default("draft"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("commerce_catalogs_owner_slug_idx").on(
+      table.owner_key,
+      table.slug,
+    ),
+    index("commerce_catalogs_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+  ],
+);
 
 // Supplier feed checkpoint. `settings` may contain account/store identifiers,
 // but credentials belong in the host's secret manager rather than this table.
@@ -253,7 +271,9 @@ export const commerceCatalogListings = pgTable(
     catalog_id: uuid().notNull(),
     compare_at_cents: integer(),
     created_at: timestamp().notNull().defaultNow(),
-    customization: portableJsonb().$type<Record<string, unknown>>().default({}),
+    customization: portableJsonb()
+      .$type<CatalogCustomizationPolicy>()
+      .default({}),
     customization_mode: varchar({ length: 20 })
       .notNull()
       .default("customizable"),
@@ -277,6 +297,11 @@ export const commerceCatalogListings = pgTable(
       table.catalog_id,
       table.slug,
     ),
+    index("commerce_listings_catalog_status_position_idx").on(
+      table.catalog_id,
+      table.status,
+      table.position,
+    ),
   ],
 );
 
@@ -299,6 +324,11 @@ export const commerceCatalogCollections = pgTable(
       table.catalog_id,
       table.slug,
     ),
+    index("commerce_collections_catalog_status_position_idx").on(
+      table.catalog_id,
+      table.status,
+      table.position,
+    ),
   ],
 );
 
@@ -314,6 +344,10 @@ export const commerceCatalogCollectionListings = pgTable(
     uniqueIndex("commerce_collection_listing_idx").on(
       table.collection_id,
       table.listing_id,
+    ),
+    index("commerce_collection_listing_position_idx").on(
+      table.collection_id,
+      table.position,
     ),
   ],
 );
@@ -731,4 +765,5 @@ export const commerceDrizzleSchema = {
 
 export * from "./queries";
 export * from "./catalogQueries";
+export * from "./storefrontMerchandising";
 export * from "./catalogSync";

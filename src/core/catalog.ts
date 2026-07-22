@@ -156,8 +156,32 @@ export type CatalogListing = {
   /** approved | customizable | both | none */
   customizationMode: "approved" | "customizable" | "both" | "none";
   /** Approved art/placements, decoration constraints, buyer fields, etc. */
-  customization: Record<string, unknown>;
+  customization: CatalogCustomizationPolicy;
   metadata: Record<string, unknown>;
+};
+
+export type CatalogApprovedArtwork = {
+  id: string;
+  name: string;
+  url: string;
+  placements?: string[];
+  metadata?: Record<string, unknown>;
+};
+
+export type CatalogBuyerField = {
+  id: string;
+  label: string;
+  required: boolean;
+  type: "text" | "textarea" | "select";
+  options?: string[];
+};
+
+/** Store-owned policy; supplier decoration capabilities remain on CatalogProduct. */
+export type CatalogCustomizationPolicy = {
+  allowedPlacements?: string[];
+  approvedArtwork?: CatalogApprovedArtwork[];
+  buyerFields?: CatalogBuyerField[];
+  metadata?: Record<string, unknown>;
 };
 
 export type ResolvedCatalogListing = {
