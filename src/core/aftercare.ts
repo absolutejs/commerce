@@ -18,6 +18,44 @@ export type StorefrontCaseAttachment = {
   label: string;
 };
 
+export type StorefrontCaseAttachmentPurpose =
+  | "customer_communication"
+  | "customer_signature"
+  | "receipt"
+  | "refund_policy"
+  | "service_documentation"
+  | "shipping_documentation"
+  | "uncategorized_file";
+
+export type StorefrontCaseAttachmentStatus =
+  | "clean"
+  | "deleted"
+  | "infected"
+  | "pending_scan"
+  | "quarantined"
+  | "scanning";
+
+export type StorefrontCaseEvidenceText = Partial<{
+  accessActivityLog: string;
+  billingAddress: string;
+  cancellationPolicyDisclosure: string;
+  cancellationRebuttal: string;
+  customerEmailAddress: string;
+  customerName: string;
+  customerPurchaseIp: string;
+  duplicateChargeExplanation: string;
+  duplicateChargeId: string;
+  productDescription: string;
+  refundPolicyDisclosure: string;
+  refundRefusalExplanation: string;
+  serviceDate: string;
+  shippingAddress: string;
+  shippingCarrier: string;
+  shippingDate: string;
+  shippingTrackingNumber: string;
+  uncategorizedText: string;
+}>;
+
 export type StorefrontCaseResolution = {
   instructions?: string;
   kind: StorefrontCaseResolutionKind;

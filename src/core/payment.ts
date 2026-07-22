@@ -5,6 +5,10 @@
 // Amounts crossing this boundary are integer minor units (cents).
 
 import type { Address } from "./shipping";
+import type {
+  StorefrontCaseAttachmentPurpose,
+  StorefrontCaseEvidenceText,
+} from "./aftercare";
 
 export type CheckoutLineItem = {
   name: string;
@@ -103,6 +107,22 @@ export type PaymentDispute = {
   status: string;
 };
 
+export type PaymentDisputeEvidenceFile = {
+  bytes: Uint8Array;
+  contentType: string;
+  id: string;
+  name: string;
+  purpose: StorefrontCaseAttachmentPurpose;
+  sha256: string;
+};
+
+export type PaymentDisputeEvidenceResult = {
+  providerFileIds: Record<string, string>;
+  providerStatus: string;
+  submissionCount: number | null;
+  submitted: boolean;
+};
+
 export type PaymentWebhookEvent =
   | { checkout: WebhookEvent; kind: "checkout" }
   | {
@@ -123,6 +143,14 @@ export type PaymentProvider = {
     idempotencyKey: string,
   ): Promise<PaymentRefund>;
   retrieveRefund(providerRefundId: string): Promise<PaymentRefund>;
+  /** Stage or submit normalized dispute evidence with stable retry identity. */
+  submitDisputeEvidence?(input: {
+    evidence: StorefrontCaseEvidenceText;
+    files: PaymentDisputeEvidenceFile[];
+    idempotencyKey: string;
+    providerDisputeId: string;
+    submit: boolean;
+  }): Promise<PaymentDisputeEvidenceResult>;
   /** Full signed event projection. Older providers may expose checkout-only verification. */
   verifyEvent?(
     payload: string,

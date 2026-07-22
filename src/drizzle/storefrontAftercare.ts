@@ -30,6 +30,9 @@ export class StorefrontAftercareError extends Error {
   constructor(
     readonly code:
       | "aftercare_disabled"
+      | "attachment_not_clean"
+      | "attachment_not_found"
+      | "attachments_disabled"
       | "case_access_denied"
       | "case_closed"
       | "case_conflict"
@@ -37,6 +40,11 @@ export class StorefrontAftercareError extends Error {
       | "case_not_found"
       | "case_transition_invalid"
       | "customer_case_kind_invalid"
+      | "evidence_disabled"
+      | "evidence_identity_conflict"
+      | "evidence_not_found"
+      | "evidence_not_retryable"
+      | "evidence_not_supported"
       | "order_access_denied"
       | "order_not_found",
   ) {

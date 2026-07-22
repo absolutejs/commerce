@@ -101,6 +101,16 @@ and upsert one case without exposing raw provider payloads. Approved full
 returns can enqueue a distinct post-delivery refund action, so shipped-order
 refunds never run through fulfillment cancellation.
 
+`createStorefrontAftercareEvidenceService()` owns the private attachment and
+payment-dispute evidence lifecycle. Uploads begin in `pending_scan`, use leased
+inspection, and remain hidden from customers unless clean. Infected bytes stay
+quarantined, scanner failures fail closed, and terminal-case retention cleanup
+deletes through a host-supplied blob boundary. Dispute evidence jobs accept
+only clean case-owned attachments, preserve stable provider idempotency, and
+quarantine ambiguous submission outcomes for explicit retry. Provider adapters
+implement `submitDisputeEvidence`; the host decides whether a job only stages
+evidence or submits it to the payment network.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing

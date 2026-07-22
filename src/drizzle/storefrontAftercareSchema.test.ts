@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
+  commerceStorefrontCaseAttachments,
+  commerceStorefrontCaseEvidenceSubmissions,
   commerceStorefrontCaseEvents,
   commerceStorefrontCaseMessages,
   commerceStorefrontCases,
@@ -18,6 +20,16 @@ describe("storefront aftercare timestamps", () => {
       commerceStorefrontCaseEvents.lease_expires_at,
       commerceStorefrontCaseEvents.next_attempt_at,
       commerceStorefrontCaseEvents.notified_at,
+      commerceStorefrontCaseAttachments.created_at,
+      commerceStorefrontCaseAttachments.updated_at,
+      commerceStorefrontCaseAttachments.lease_expires_at,
+      commerceStorefrontCaseAttachments.retention_expires_at,
+      commerceStorefrontCaseAttachments.scanned_at,
+      commerceStorefrontCaseEvidenceSubmissions.created_at,
+      commerceStorefrontCaseEvidenceSubmissions.updated_at,
+      commerceStorefrontCaseEvidenceSubmissions.lease_expires_at,
+      commerceStorefrontCaseEvidenceSubmissions.next_attempt_at,
+      commerceStorefrontCaseEvidenceSubmissions.submitted_at,
     ];
 
     expect(timestampColumns.map((column) => column.getSQLType())).toEqual(

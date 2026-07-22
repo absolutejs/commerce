@@ -41,6 +41,7 @@ import type {
 } from "../core/fulfillment";
 import type {
   StorefrontCaseAttachment,
+  StorefrontCaseEvidenceText,
   StorefrontCaseResolution,
 } from "../core/aftercare";
 
@@ -682,6 +683,103 @@ export const commerceStorefrontCaseMessages = pgTable(
   ],
 );
 
+export const commerceStorefrontCaseAttachments = pgTable(
+  "commerce_storefront_case_attachments",
+  {
+    blob_key: varchar({ length: 700 }).notNull(),
+    byte_count: integer().notNull(),
+    case_id: uuid().notNull(),
+    content_type: varchar({ length: 160 }).notNull(),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    internal: boolean().notNull().default(false),
+    label: varchar({ length: 240 }).notNull(),
+    last_error: text(),
+    lease_expires_at: timestamp({ precision: 3, withTimezone: true }),
+    owner_key: varchar({ length: 160 }).notNull(),
+    purpose: varchar({ length: 60 }).notNull().default("uncategorized_file"),
+    retention_expires_at: timestamp({ precision: 3, withTimezone: true }),
+    scan_details: text(),
+    scan_provider: varchar({ length: 160 }),
+    scanned_at: timestamp({ precision: 3, withTimezone: true }),
+    sha256: varchar({ length: 64 }).notNull(),
+    status: varchar({ length: 30 }).notNull().default("pending_scan"),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_case_attachments_blob_idx").on(
+      table.owner_key,
+      table.blob_key,
+    ),
+    index("commerce_storefront_case_attachments_case_created_idx").on(
+      table.case_id,
+      table.created_at,
+    ),
+    index("commerce_storefront_case_attachments_status_idx").on(
+      table.status,
+      table.created_at,
+    ),
+    index("commerce_storefront_case_attachments_retention_idx").on(
+      table.retention_expires_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontCaseEvidenceSubmissions = pgTable(
+  "commerce_storefront_case_evidence_submissions",
+  {
+    attachment_ids: portableJsonb().$type<string[]>().notNull().default([]),
+    attempts: integer().notNull().default(0),
+    case_id: uuid().notNull(),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    evidence: portableJsonb()
+      .$type<StorefrontCaseEvidenceText>()
+      .notNull()
+      .default({}),
+    id: uuid().defaultRandom().primaryKey(),
+    idempotency_key: varchar({ length: 200 }).notNull(),
+    last_error: text(),
+    lease_expires_at: timestamp({ precision: 3, withTimezone: true }),
+    next_attempt_at: timestamp({ precision: 3, withTimezone: true }),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider_file_ids: portableJsonb()
+      .$type<Record<string, string>>()
+      .notNull()
+      .default({}),
+    provider_status: varchar({ length: 80 }),
+    submission_count: integer(),
+    submit: boolean().notNull().default(false),
+    status: varchar({ length: 30 }).notNull().default("pending"),
+    submitted_at: timestamp({ precision: 3, withTimezone: true }),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_case_evidence_idempotency_idx").on(
+      table.owner_key,
+      table.case_id,
+      table.idempotency_key,
+    ),
+    index("commerce_storefront_case_evidence_status_next_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
+    index("commerce_storefront_case_evidence_case_created_idx").on(
+      table.case_id,
+      table.created_at,
+    ),
+  ],
+);
+
 export const commerceStorefrontCaseEvents = pgTable(
   "commerce_storefront_case_events",
   {
@@ -1155,6 +1253,8 @@ export const commerceDrizzleSchema = {
   pricingTiers: commercePricingTiers,
   subscribers: commerceSubscribers,
   storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
+  storefrontCaseAttachments: commerceStorefrontCaseAttachments,
+  storefrontCaseEvidenceSubmissions: commerceStorefrontCaseEvidenceSubmissions,
   storefrontCaseEvents: commerceStorefrontCaseEvents,
   storefrontCaseMessages: commerceStorefrontCaseMessages,
   storefrontCases: commerceStorefrontCases,
@@ -1168,6 +1268,7 @@ export * from "./catalogQueries";
 export * from "./storefrontMerchandising";
 export * from "./storefrontPayments";
 export * from "./storefrontFulfillment";
+export * from "./storefrontAftercareEvidence";
 export * from "./storefrontOrders";
 export * from "./storefrontAftercare";
 export * from "./catalogSync";
