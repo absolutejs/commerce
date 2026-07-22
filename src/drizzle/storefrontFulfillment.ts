@@ -10,6 +10,7 @@ import {
   commerceStorefrontFulfillmentJobs,
   commerceStorefrontOrders,
 } from "./index";
+import { emitStorefrontOrderEvent } from "./storefrontOrders";
 
 const DEFAULT_LEASE_MS = 60_000;
 const DEFAULT_RECONCILE_MS = 60_000;
@@ -222,6 +223,7 @@ export const createStorefrontFulfillmentService = (options: {
   const retainResult = async (
     job: StorefrontFulfillmentJob,
     result: FulfillmentOrder,
+    ownerKey: string,
   ) => {
     const terminal = ["cancelled", "failed", "shipped"].includes(result.status);
     const status =
@@ -261,6 +263,20 @@ export const createStorefrontFulfillmentService = (options: {
           updated_at: now(),
         })
         .where(eq(commerceStorefrontOrders.id, job.order_id));
+      const kind =
+        status === "complete"
+          ? "shipped"
+          : status === "failed" || status === "cancelled"
+            ? "fulfillment_failed"
+            : "fulfillment_submitted";
+      await emitStorefrontOrderEvent(transaction, {
+        kind,
+        orderId: job.order_id,
+        ownerKey,
+        ...(result.tracking.length > 0
+          ? { payload: { tracking: result.tracking } }
+          : {}),
+      });
     });
 
     return { jobId: job.id, result, status };
@@ -284,22 +300,22 @@ export const createStorefrontFulfillmentService = (options: {
           commerceFulfillmentAccounts.owner_key,
           commerceFulfillmentAccounts.label,
         )) satisfies StorefrontFulfillmentInstallation[],
-      jobs: (
-        await options.db
-          .select({
-            job: commerceStorefrontFulfillmentJobs,
-            ownerKey: commerceStorefrontOrders.owner_key,
-          })
-          .from(commerceStorefrontFulfillmentJobs)
-          .innerJoin(
-            commerceStorefrontOrders,
-            eq(
-              commerceStorefrontOrders.id,
-              commerceStorefrontFulfillmentJobs.order_id,
-            ),
-          )
-          .orderBy(asc(commerceStorefrontFulfillmentJobs.created_at))
-      ) satisfies StorefrontFulfillmentFleetJob[],
+      jobs: (await options.db
+        .select({
+          job: commerceStorefrontFulfillmentJobs,
+          ownerKey: commerceStorefrontOrders.owner_key,
+        })
+        .from(commerceStorefrontFulfillmentJobs)
+        .innerJoin(
+          commerceStorefrontOrders,
+          eq(
+            commerceStorefrontOrders.id,
+            commerceStorefrontFulfillmentJobs.order_id,
+          ),
+        )
+        .orderBy(
+          asc(commerceStorefrontFulfillmentJobs.created_at),
+        )) satisfies StorefrontFulfillmentFleetJob[],
     }),
     listOwner: async (ownerKey: string) => ({
       installations: (await options.db
@@ -465,6 +481,7 @@ export const createStorefrontFulfillmentService = (options: {
           return await retainResult(
             job,
             await provider.getOrder(job.provider_order_id),
+            order.owner_key,
           );
         } catch (error) {
           await release(job.id, {
@@ -496,7 +513,11 @@ export const createStorefrontFulfillmentService = (options: {
         .set({ installation_id: installed.id, request, updated_at: now() })
         .where(eq(commerceStorefrontFulfillmentJobs.id, job.id));
       try {
-        return await retainResult(job, await provider.submitOrder(request));
+        return await retainResult(
+          job,
+          await provider.submitOrder(request),
+          order.owner_key,
+        );
       } catch (error) {
         await release(job.id, {
           last_error: errorMessage(error),

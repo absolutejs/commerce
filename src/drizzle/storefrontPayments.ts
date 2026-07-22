@@ -17,6 +17,10 @@ import {
   commerceStorefrontFulfillmentJobs,
   commerceStorefrontOrders,
 } from "./index";
+import {
+  emitStorefrontOrderEvent,
+  storefrontOrderAccessTokenHash,
+} from "./storefrontOrders";
 
 export type SavePaymentInstallationInput = {
   config?: Record<string, unknown>;
@@ -114,6 +118,7 @@ export const createStorefrontPaymentService = (options: {
       idempotencyKey: string;
       installationId: string;
       lines: StorefrontCartLineInput[];
+      orderAccessToken: string;
       ownerKey: string;
       storefront: PublishedStorefront;
       successUrl: string;
@@ -126,6 +131,9 @@ export const createStorefrontPaymentService = (options: {
         catalogId: input.storefront.catalog.id,
         lines: input.lines,
       });
+      const accessTokenHash = storefrontOrderAccessTokenHash(
+        input.orderAccessToken,
+      );
       const [existing] = await options.db
         .select()
         .from(commerceCheckoutIntents)
@@ -139,9 +147,12 @@ export const createStorefrontPaymentService = (options: {
       if (existing) {
         if (existing.request_digest !== requestDigest)
           throw new StorefrontPaymentError("checkout_identity_conflict");
+        if (existing.access_token_hash !== accessTokenHash)
+          throw new StorefrontPaymentError("checkout_identity_conflict");
         if (existing.checkout_result)
           return {
             checkout: existing.checkout_result,
+            checkoutIntentId: existing.id,
             quote: existing.quote,
           };
       }
@@ -152,6 +163,7 @@ export const createStorefrontPaymentService = (options: {
         : await options.db
             .insert(commerceCheckoutIntents)
             .values({
+              access_token_hash: accessTokenHash,
               cart: input.lines,
               catalog_id: quote.catalogId,
               idempotency_key: input.idempotencyKey,
@@ -182,8 +194,14 @@ export const createStorefrontPaymentService = (options: {
       if (!intent) throw new StorefrontPaymentError("checkout_not_found");
       if (intent.request_digest !== requestDigest)
         throw new StorefrontPaymentError("checkout_identity_conflict");
+      if (intent.access_token_hash !== accessTokenHash)
+        throw new StorefrontPaymentError("checkout_identity_conflict");
       if (intent.checkout_result)
-        return { checkout: intent.checkout_result, quote: intent.quote };
+        return {
+          checkout: intent.checkout_result,
+          checkoutIntentId: intent.id,
+          quote: intent.quote,
+        };
       try {
         const result = await createStorefrontCheckout({
           cancelUrl: input.cancelUrl,
@@ -208,7 +226,7 @@ export const createStorefrontPaymentService = (options: {
           })
           .where(eq(commerceCheckoutIntents.id, intent.id));
 
-        return result;
+        return { ...result, checkoutIntentId: intent.id };
       } catch (error) {
         await options.db
           .update(commerceCheckoutIntents)
@@ -319,6 +337,7 @@ export const createStorefrontPaymentService = (options: {
         const [order] = await transaction
           .insert(commerceStorefrontOrders)
           .values({
+            access_token_hash: intent.access_token_hash,
             amount_cents: intent.quote.subtotalCents,
             catalog_id: intent.catalog_id,
             currency: intent.quote.currency,
@@ -347,6 +366,12 @@ export const createStorefrontPaymentService = (options: {
               },
             })
             .onConflictDoNothing();
+        if (order)
+          await emitStorefrontOrderEvent(transaction, {
+            kind: "payment_confirmed",
+            orderId: order.id,
+            ownerKey: order.owner_key,
+          });
 
         return { duplicate: false, status };
       });

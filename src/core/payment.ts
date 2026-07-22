@@ -86,11 +86,21 @@ export type WebhookEvent = {
   session: CheckoutSession;
 };
 
+export type PaymentRefund = {
+  providerRefundId: string;
+  status: "failed" | "pending" | "succeeded";
+};
+
 export type PaymentProvider = {
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult>;
   createCoupon(input: CreateCouponInput): Promise<string>;
   /** Fetch a session's current state (for return pages). */
   retrieveCheckout(sessionId: string): Promise<CheckoutSession>;
-  refundBySession(sessionId: string): Promise<void>;
+  /** Refund with a stable host identity so retries cannot double-refund. */
+  refundBySession(
+    sessionId: string,
+    idempotencyKey: string,
+  ): Promise<PaymentRefund>;
+  retrieveRefund(providerRefundId: string): Promise<PaymentRefund>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
 };

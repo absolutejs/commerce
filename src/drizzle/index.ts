@@ -397,6 +397,7 @@ export const commercePaymentInstallations = pgTable(
 export const commerceCheckoutIntents = pgTable(
   "commerce_checkout_intents",
   {
+    access_token_hash: varchar({ length: 64 }),
     cart: portableJsonb().$type<StorefrontCartLineInput[]>().notNull(),
     catalog_id: uuid().notNull(),
     checkout_result: portableJsonb().$type<CheckoutResult>(),
@@ -451,6 +452,7 @@ export const commercePaymentEvents = pgTable(
 export const commerceStorefrontOrders = pgTable(
   "commerce_storefront_orders",
   {
+    access_token_hash: varchar({ length: 64 }),
     amount_cents: integer().notNull(),
     catalog_id: uuid().notNull(),
     created_at: timestamp().notNull().defaultNow(),
@@ -512,6 +514,79 @@ export const commerceStorefrontFulfillmentJobs = pgTable(
     index("commerce_storefront_fulfillment_jobs_status_next_idx").on(
       table.status,
       table.next_attempt_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontOrderActions = pgTable(
+  "commerce_storefront_order_actions",
+  {
+    attempts: integer().notNull().default(0),
+    completed_at: timestamp(),
+    created_at: timestamp().notNull().defaultNow(),
+    fulfillment_result: portableJsonb().$type<FulfillmentOrder>(),
+    id: uuid().defaultRandom().primaryKey(),
+    idempotency_key: varchar({ length: 200 }).notNull(),
+    last_error: text(),
+    lease_expires_at: timestamp(),
+    next_attempt_at: timestamp(),
+    order_id: uuid().notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    payment_refund: portableJsonb().$type<Record<string, unknown>>(),
+    phase: varchar({ length: 40 }).notNull().default("requested"),
+    reason: text().notNull(),
+    requested_by: varchar({ length: 200 }).notNull(),
+    status: varchar({ length: 30 }).notNull().default("pending"),
+    type: varchar({ length: 40 }).notNull().default("cancel_refund"),
+    updated_at: timestamp().notNull().defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_order_actions_idempotency_idx").on(
+      table.owner_key,
+      table.idempotency_key,
+    ),
+    index("commerce_storefront_order_actions_status_next_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
+    index("commerce_storefront_order_actions_order_idx").on(table.order_id),
+  ],
+);
+
+export const commerceStorefrontOrderEvents = pgTable(
+  "commerce_storefront_order_events",
+  {
+    attempts: integer().notNull().default(0),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    kind: varchar({ length: 50 }).notNull(),
+    last_error: text(),
+    lease_expires_at: timestamp(),
+    next_attempt_at: timestamp(),
+    notified_at: timestamp(),
+    order_id: uuid().notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    payload: portableJsonb()
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: varchar({ length: 30 }).notNull().default("pending"),
+    updated_at: timestamp().notNull().defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_order_events_order_kind_idx").on(
+      table.order_id,
+      table.kind,
+    ),
+    index("commerce_storefront_order_events_status_next_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
+    index("commerce_storefront_order_events_owner_created_idx").on(
+      table.owner_key,
+      table.created_at,
     ),
   ],
 );
@@ -946,6 +1021,8 @@ export const commerceDrizzleSchema = {
   pricingTiers: commercePricingTiers,
   subscribers: commerceSubscribers,
   storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
+  storefrontOrderActions: commerceStorefrontOrderActions,
+  storefrontOrderEvents: commerceStorefrontOrderEvents,
   storefrontOrders: commerceStorefrontOrders,
 };
 
@@ -954,4 +1031,5 @@ export * from "./catalogQueries";
 export * from "./storefrontMerchandising";
 export * from "./storefrontPayments";
 export * from "./storefrontFulfillment";
+export * from "./storefrontOrders";
 export * from "./catalogSync";

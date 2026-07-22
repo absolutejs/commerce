@@ -80,6 +80,16 @@ terminal state. Retry and quarantine controls are tenant fenced; provider
 credentials are resolved only after both the platform gate and installation are
 enabled.
 
+`createStorefrontOrderService()` closes the post-purchase loop. Checkout stores
+only a SHA-256 digest of a browser-generated order-access token, allowing a
+guest to retrieve exactly its checkout/order without exposing order inventory
+by email or identifier. The service exposes redacted owner/fleet history,
+transactional lifecycle events, leased idempotent notification delivery, and a
+separately gated cancellation/refund coordinator. Cancellation confirms or
+skips fulfillment before invoking a payment refund with the durable action ID;
+ambiguous fulfillment or payment effects quarantine until an explicit
+tenant-fenced retry.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing
