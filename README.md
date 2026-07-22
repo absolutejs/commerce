@@ -4,6 +4,43 @@ Provider-agnostic commerce primitives for [AbsoluteJS](https://absolutejs.ai)
 apps — so every shop isn't rebuilding cart, checkout, orders, and fulfillment
 from scratch.
 
+## Multi-store product catalogs
+
+The catalog domain separates canonical supplier truth from storefront
+merchandising:
+
+- `CatalogProduct` is a branded style such as SanMar `PC54`.
+- `ProductVariant` is one exact purchasable supplier SKU (color/size/options).
+- `CatalogListing` exposes that product in a particular corporate store with
+  store-specific copy, pricing, approved artwork, and customization rules.
+- `CatalogCollection` organizes large assortments without duplicating products.
+- `CatalogSourceProvider` is the adapter contract for supplier feeds and live
+  inventory.
+- Supplier sync checkpoints and batch variant upserts make large feed imports
+  resumable and efficient; listing queries filter by search, brand, category,
+  and product type.
+
+That model supports one supplier product being reused across hundreds of
+tenant catalogs while every store remains independently merchandised.
+
+```ts
+import {
+	findVariantByOptions,
+	listingPriceCents,
+	type CatalogSourceProvider
+} from '@absolutejs/commerce';
+
+const variant = findVariantByOptions(product.variants, {
+	Color: 'Navy',
+	Size: 'XL'
+});
+const price = listingPriceCents(product.listing, variant);
+```
+
+The `@absolutejs/commerce/drizzle` export includes normalized catalog,
+products, variants, listings, collections, and collection-membership tables,
+plus idempotent supplier-ingestion and storefront query helpers.
+
 Follows the same shape as `@absolutejs/voice`: a host package holds the
 **agnostic logic + adapter contracts**, and provider implementations live in
 the [`commerce-adapters`](https://github.com/absolutejs/commerce-adapters)
@@ -31,7 +68,7 @@ const label = await shipping.buyCheapestLabel({ from, to, parcel });
 
 Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 
-- Cart + pricing engine (variants, options, quantity breaks, setup fees)
+- Supplier adapters and scheduled catalog synchronization
 - Order lifecycle + production-stage state machine
 - `PaymentProvider` contract (Stripe adapter) + server-side re-pricing + webhook
   fulfillment

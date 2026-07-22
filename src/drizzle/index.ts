@@ -12,9 +12,12 @@ import {
 	pgTable,
 	text,
 	timestamp,
+	uniqueIndex,
 	uuid,
 	varchar
 } from 'drizzle-orm/pg-core';
+
+import type { BrandKit, DecorationArea, ProductMedia } from '../core/catalog';
 
 export type CommerceOrderLine = {
 	amountTotal: number;
@@ -44,6 +47,7 @@ export const commerceDesigns = pgTable('designs', {
 // A B2B company account: net terms, tax-exempt status, PO requirement, and a
 // brand kit (saved logo URLs) for fast reorders.
 export const commerceCompanies = pgTable('companies', {
+	brand_kit: jsonb().$type<BrandKit>(),
 	brand_logos: jsonb().$type<string[]>().default([]),
 	contact_email: varchar({ length: 320 }),
 	created_at: timestamp().notNull().defaultNow(),
@@ -55,6 +59,244 @@ export const commerceCompanies = pgTable('companies', {
 	tax_exempt: boolean().notNull().default(false),
 	tax_exempt_id: varchar({ length: 80 })
 });
+
+// A storefront/tenant catalog. Canonical products may be listed in any number
+// of catalogs with different copy, prices, approved art, and visibility.
+export const commerceCatalogs = pgTable('commerce_catalogs', {
+	brand_kit: jsonb().$type<BrandKit>(),
+	created_at: timestamp().notNull().defaultNow(),
+	currency: varchar({ length: 10 }).notNull().default('USD'),
+	id: uuid().defaultRandom().primaryKey(),
+	locale: varchar({ length: 20 }).notNull().default('en-US'),
+	name: varchar({ length: 200 }).notNull(),
+	owner_key: varchar({ length: 160 }),
+	settings: jsonb().$type<Record<string, unknown>>().default({}),
+	slug: varchar({ length: 120 }).notNull().unique(),
+	status: varchar({ length: 20 }).notNull().default('draft'),
+	updated_at: timestamp().notNull().defaultNow()
+});
+
+// Supplier feed checkpoint. `settings` may contain account/store identifiers,
+// but credentials belong in the host's secret manager rather than this table.
+export const commerceCatalogSources = pgTable('commerce_catalog_sources', {
+	cursor: varchar({ length: 500 }),
+	id: varchar({ length: 120 }).primaryKey(),
+	last_error: text(),
+	last_synced_at: timestamp(),
+	name: varchar({ length: 200 }).notNull(),
+	provider: varchar({ length: 120 }).notNull(),
+	settings: jsonb().$type<Record<string, unknown>>().default({}),
+	status: varchar({ length: 20 }).notNull().default('active'),
+	updated_at: timestamp().notNull().defaultNow()
+});
+
+// Supplier/manufacturer truth shared by every catalog. IDs should be stable
+// and namespaced when imported (for example `sanmar:PC54`).
+export const commerceProducts = pgTable(
+	'commerce_products',
+	{
+		attributes: jsonb()
+			.$type<Record<string, string | number | boolean | string[]>>()
+			.default({}),
+		brand: varchar({ length: 160 }).notNull(),
+		category: varchar({ length: 160 }).notNull(),
+		created_at: timestamp().notNull().defaultNow(),
+		decoration_areas: jsonb().$type<DecorationArea[]>().default([]),
+		description: text().notNull().default(''),
+		external_id: varchar({ length: 200 }),
+		id: varchar({ length: 160 }).primaryKey(),
+		media: jsonb().$type<ProductMedia[]>().default([]),
+		metadata: jsonb().$type<Record<string, unknown>>().default({}),
+		option_names: jsonb().$type<string[]>().default([]),
+		product_type: varchar({ length: 120 }).notNull(),
+		slug: varchar({ length: 180 }).notNull(),
+		source_id: varchar({ length: 120 }),
+		status: varchar({ length: 20 }).notNull().default('draft'),
+		style_code: varchar({ length: 120 }).notNull(),
+		tags: jsonb().$type<string[]>().default([]),
+		title: varchar({ length: 240 }).notNull(),
+		updated_at: timestamp().notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('commerce_products_source_external_idx').on(
+			table.source_id,
+			table.external_id
+		)
+	]
+);
+
+// An exact purchasable SKU, normally one color/size combination.
+export const commerceProductVariants = pgTable(
+	'commerce_product_variants',
+	{
+		available: boolean().notNull().default(true),
+		barcode: varchar({ length: 120 }),
+		compare_at_cents: integer(),
+		cost_cents: integer(),
+		created_at: timestamp().notNull().defaultNow(),
+		currency: varchar({ length: 10 }).notNull().default('USD'),
+		external_id: varchar({ length: 200 }),
+		id: varchar({ length: 200 }).primaryKey(),
+		inventory_policy: varchar({ length: 20 }).notNull().default('external'),
+		inventory_quantity: integer(),
+		media: jsonb().$type<ProductMedia[]>().default([]),
+		metadata: jsonb().$type<Record<string, unknown>>().default({}),
+		options: jsonb().$type<Record<string, string>>().notNull(),
+		price_cents: integer(),
+		product_id: varchar({ length: 160 }).notNull(),
+		sku: varchar({ length: 200 }).notNull().unique(),
+		supplier_sku: varchar({ length: 200 }),
+		updated_at: timestamp().notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('commerce_variants_product_external_idx').on(
+			table.product_id,
+			table.external_id
+		)
+	]
+);
+
+// Store-specific merchandising and customization rules for a product.
+export const commerceCatalogListings = pgTable(
+	'commerce_catalog_listings',
+	{
+		base_price_cents: integer(),
+		catalog_id: uuid().notNull(),
+		compare_at_cents: integer(),
+		created_at: timestamp().notNull().defaultNow(),
+		customization: jsonb().$type<Record<string, unknown>>().default({}),
+		customization_mode: varchar({ length: 20 })
+			.notNull()
+			.default('customizable'),
+		description: text(),
+		id: uuid().defaultRandom().primaryKey(),
+		metadata: jsonb().$type<Record<string, unknown>>().default({}),
+		position: integer().notNull().default(0),
+		product_id: varchar({ length: 160 }).notNull(),
+		slug: varchar({ length: 180 }).notNull(),
+		status: varchar({ length: 20 }).notNull().default('draft'),
+		tags: jsonb().$type<string[]>().default([]),
+		title: varchar({ length: 240 }),
+		updated_at: timestamp().notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('commerce_listings_catalog_product_idx').on(
+			table.catalog_id,
+			table.product_id
+		),
+		uniqueIndex('commerce_listings_catalog_slug_idx').on(
+			table.catalog_id,
+			table.slug
+		)
+	]
+);
+
+export const commerceCatalogCollections = pgTable(
+	'commerce_catalog_collections',
+	{
+		catalog_id: uuid().notNull(),
+		created_at: timestamp().notNull().defaultNow(),
+		description: text(),
+		id: uuid().defaultRandom().primaryKey(),
+		image_url: varchar({ length: 600 }),
+		position: integer().notNull().default(0),
+		slug: varchar({ length: 180 }).notNull(),
+		status: varchar({ length: 20 }).notNull().default('draft'),
+		title: varchar({ length: 200 }).notNull(),
+		updated_at: timestamp().notNull().defaultNow()
+	},
+	(table) => [
+		uniqueIndex('commerce_collections_catalog_slug_idx').on(
+			table.catalog_id,
+			table.slug
+		)
+	]
+);
+
+export const commerceCatalogCollectionListings = pgTable(
+	'commerce_catalog_collection_listings',
+	{
+		collection_id: uuid().notNull(),
+		id: uuid().defaultRandom().primaryKey(),
+		listing_id: uuid().notNull(),
+		position: integer().notNull().default(0)
+	},
+	(table) => [
+		uniqueIndex('commerce_collection_listing_idx').on(
+			table.collection_id,
+			table.listing_id
+		)
+	]
+);
+
+// Merchant-scoped fulfillment connection. Secrets stay in the host secret
+// store; config only contains non-secret routing/default settings.
+export const commerceFulfillmentAccounts = pgTable('fulfillment_accounts', {
+	config: jsonb().$type<Record<string, unknown>>().default({}),
+	created_at: timestamp().notNull().defaultNow(),
+	id: uuid().defaultRandom().primaryKey(),
+	label: varchar({ length: 160 }).notNull(),
+	owner_key: varchar({ length: 160 }),
+	provider: varchar({ length: 120 }).notNull(),
+	status: varchar({ length: 20 }).notNull().default('active'),
+	updated_at: timestamp().notNull().defaultNow()
+});
+
+// Maps a canonical commerce variant to an exact provider-side SKU.
+export const commerceFulfillmentVariantMappings = pgTable(
+	'fulfillment_variant_mappings',
+	{
+		account_id: uuid().notNull(),
+		id: uuid().defaultRandom().primaryKey(),
+		metadata: jsonb().$type<Record<string, unknown>>().default({}),
+		provider_sku: varchar({ length: 200 }).notNull(),
+		variant_id: varchar({ length: 200 }).notNull()
+	},
+	(table) => [
+		uniqueIndex('fulfillment_mapping_account_variant_idx').on(
+			table.account_id,
+			table.variant_id
+		)
+	]
+);
+
+// One idempotent provider submission. Mixed-provider checkouts create one job
+// per provider account through core routeFulfillmentOrder.
+export const commerceFulfillmentJobs = pgTable('fulfillment_jobs', {
+	account_id: uuid().notNull(),
+	cost_cents: integer(),
+	created_at: timestamp().notNull().defaultNow(),
+	currency: varchar({ length: 10 }),
+	error: text(),
+	id: uuid().defaultRandom().primaryKey(),
+	idempotency_key: varchar({ length: 255 }).notNull().unique(),
+	order_session_id: varchar({ length: 255 }).notNull(),
+	provider: varchar({ length: 120 }).notNull(),
+	provider_order_id: varchar({ length: 255 }),
+	request: jsonb().$type<Record<string, unknown>>().notNull(),
+	response: jsonb().$type<Record<string, unknown>>(),
+	status: varchar({ length: 30 }).notNull().default('pending'),
+	updated_at: timestamp().notNull().defaultNow()
+});
+
+export const commerceFulfillmentEvents = pgTable(
+	'fulfillment_events',
+	{
+		created_at: timestamp().notNull().defaultNow(),
+		id: uuid().defaultRandom().primaryKey(),
+		job_id: uuid().notNull(),
+		occurred_at: timestamp(),
+		payload: jsonb().$type<Record<string, unknown>>().notNull(),
+		provider_event_id: varchar({ length: 255 }),
+		type: varchar({ length: 60 }).notNull()
+	},
+	(table) => [
+		uniqueIndex('fulfillment_events_job_provider_event_idx').on(
+			table.job_id,
+			table.provider_event_id
+		)
+	]
+);
 
 export type CommerceInvoiceLine = {
 	description: string;
@@ -111,9 +353,10 @@ export const commerceOrders = pgTable('orders', {
 	line_items: jsonb().$type<CommerceOrderLine[]>().default([]),
 	payment_status: varchar({ length: 50 }),
 	/** Digitized stitch files + cut files, one per design (digitized_url is the legacy single slot). */
-	production_files: jsonb().$type<
-		{ url: string; filename?: string | null; artworkUrl?: string | null }[]
-	>(),
+	production_files:
+		jsonb().$type<
+			{ url: string; filename?: string | null; artworkUrl?: string | null }[]
+		>(),
 	production_stage: varchar({ length: 20 }),
 	proof_note: text(),
 	proof_status: varchar({ length: 20 }),
@@ -332,9 +575,7 @@ export const commerceSavedDesigns = pgTable('saved_designs', {
 // prices with (product category, collection, SKU…). Breaks are applied by
 // core/pricing quantityDiscount after normalizeQuantityBreaks.
 export const commercePricingTiers = pgTable('pricing_tiers', {
-	breaks: jsonb()
-		.$type<{ min: number; discount: number }[]>()
-		.notNull(),
+	breaks: jsonb().$type<{ min: number; discount: number }[]>().notNull(),
 	tier_key: varchar({ length: 80 }).primaryKey(),
 	updated_at: timestamp().notNull().defaultNow()
 });
@@ -359,9 +600,18 @@ export const commerceProductionSpecs = pgTable('production_specs', {
 // Every commerce table in one object — spread into your own Drizzle schema.
 export const commerceDrizzleSchema = {
 	abandonedCarts: commerceAbandonedCarts,
+	catalogCollectionListings: commerceCatalogCollectionListings,
+	catalogCollections: commerceCatalogCollections,
+	catalogListings: commerceCatalogListings,
+	catalogSources: commerceCatalogSources,
+	catalogs: commerceCatalogs,
 	companies: commerceCompanies,
 	designs: commerceDesigns,
 	discounts: commerceDiscounts,
+	fulfillmentAccounts: commerceFulfillmentAccounts,
+	fulfillmentEvents: commerceFulfillmentEvents,
+	fulfillmentJobs: commerceFulfillmentJobs,
+	fulfillmentVariantMappings: commerceFulfillmentVariantMappings,
 	invoices: commerceInvoices,
 	favorites: commerceFavorites,
 	galleryItems: commerceGalleryItems,
@@ -374,6 +624,8 @@ export const commerceDrizzleSchema = {
 	inventory: commerceInventory,
 	loyalty: commerceLoyalty,
 	orders: commerceOrders,
+	products: commerceProducts,
+	productVariants: commerceProductVariants,
 	productionSpecs: commerceProductionSpecs,
 	pushSubscriptions: commercePushSubscriptions,
 	quotes: commerceQuotes,
@@ -385,3 +637,4 @@ export const commerceDrizzleSchema = {
 };
 
 export * from './queries';
+export * from './catalogQueries';
