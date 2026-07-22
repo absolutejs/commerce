@@ -5,6 +5,8 @@ import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
+  commerceStorefrontCaseEvents,
+  commerceStorefrontCases,
   commerceStorefrontFulfillmentJobs,
   commerceStorefrontOrderActions,
   commerceStorefrontOrderEvents,
@@ -20,6 +22,7 @@ export type StorefrontOrderEventKind =
   | "fulfillment_failed"
   | "fulfillment_submitted"
   | "payment_confirmed"
+  | "returned_refunded"
   | "shipped";
 
 export type StorefrontOrderAction =
@@ -36,7 +39,8 @@ export class StorefrontOrderError extends Error {
       | "action_not_retryable"
       | "cancellation_not_allowed"
       | "order_access_denied"
-      | "order_not_found",
+      | "order_not_found"
+      | "refund_not_allowed",
   ) {
     super(`Storefront order operation failed (${code})`);
     this.name = "StorefrontOrderError";
@@ -232,6 +236,7 @@ export const createStorefrontOrderService = (options: {
     action: StorefrontOrderAction,
     refund: PaymentRefund,
   ) => {
+    const returned = action.type === "post_delivery_refund";
     await options.db.transaction(async (transaction) => {
       await transaction
         .update(commerceStorefrontOrderActions)
@@ -248,13 +253,38 @@ export const createStorefrontOrderService = (options: {
         .where(eq(commerceStorefrontOrderActions.id, action.id));
       await transaction
         .update(commerceStorefrontOrders)
-        .set({ status: "cancelled_refunded", updated_at: now() })
+        .set({
+          status: returned ? "refunded" : "cancelled_refunded",
+          updated_at: now(),
+        })
         .where(eq(commerceStorefrontOrders.id, action.order_id));
       await emitStorefrontOrderEvent(transaction, {
-        kind: "cancelled_refunded",
+        kind: returned ? "returned_refunded" : "cancelled_refunded",
         orderId: action.order_id,
         ownerKey: action.owner_key,
       });
+      if (returned && action.case_id) {
+        await transaction
+          .update(commerceStorefrontCases)
+          .set({ closed_at: now(), status: "resolved", updated_at: now() })
+          .where(
+            and(
+              eq(commerceStorefrontCases.id, action.case_id),
+              eq(commerceStorefrontCases.owner_key, action.owner_key),
+            ),
+          );
+        await transaction
+          .insert(commerceStorefrontCaseEvents)
+          .values({
+            case_id: action.case_id,
+            event_key: `refund:${action.id}`,
+            kind: "refund_completed",
+            order_id: action.order_id,
+            owner_key: action.owner_key,
+            payload: { orderActionId: action.id },
+          })
+          .onConflictDoNothing();
+      }
     });
 
     return { actionId: action.id, status: "complete" as const };
@@ -301,6 +331,7 @@ export const createStorefrontOrderService = (options: {
 
   const runAction = async (action: StorefrontOrderAction) => {
     const order = await orderFor(action.owner_key, action.order_id);
+    if (action.type === "post_delivery_refund") return refund(action, order);
     if (
       action.phase === "fulfillment_cancelled" ||
       action.phase === "refund_pending" ||
@@ -576,10 +607,7 @@ export const createStorefrontOrderService = (options: {
                   ),
                   and(
                     eq(commerceStorefrontOrderActions.order_id, order.id),
-                    eq(
-                      commerceStorefrontOrderActions.type,
-                      "cancel_refund",
-                    ),
+                    eq(commerceStorefrontOrderActions.type, "cancel_refund"),
                   ),
                 ),
               ),
@@ -592,6 +620,76 @@ export const createStorefrontOrderService = (options: {
           .update(commerceStorefrontOrders)
           .set({ status: "cancellation_requested", updated_at: now() })
           .where(eq(commerceStorefrontOrders.id, order.id));
+
+      return action;
+    },
+    requestRefund: async (input: {
+      caseId: string;
+      idempotencyKey: string;
+      orderId: string;
+      ownerKey: string;
+      reason: string;
+      requestedBy: string;
+    }) => {
+      if (!actionsEnabled) throw new StorefrontOrderError("action_disabled");
+      const order = await orderFor(input.ownerKey, input.orderId);
+      if (["cancelled_refunded", "refunded"].includes(order.status))
+        throw new StorefrontOrderError("refund_not_allowed");
+      const [caseEntry] = await options.db
+        .select({ id: commerceStorefrontCases.id })
+        .from(commerceStorefrontCases)
+        .where(
+          and(
+            eq(commerceStorefrontCases.id, input.caseId),
+            eq(commerceStorefrontCases.owner_key, input.ownerKey),
+            eq(commerceStorefrontCases.order_id, order.id),
+            eq(commerceStorefrontCases.kind, "return"),
+            eq(commerceStorefrontCases.status, "approved"),
+          ),
+        )
+        .limit(1);
+      if (!caseEntry) throw new StorefrontOrderError("refund_not_allowed");
+      const [created] = await options.db
+        .insert(commerceStorefrontOrderActions)
+        .values({
+          case_id: input.caseId,
+          idempotency_key: input.idempotencyKey,
+          order_id: order.id,
+          owner_key: input.ownerKey,
+          reason: input.reason,
+          requested_by: input.requestedBy,
+          type: "post_delivery_refund",
+        })
+        .onConflictDoNothing()
+        .returning();
+      const [known] = created
+        ? []
+        : await options.db
+            .select()
+            .from(commerceStorefrontOrderActions)
+            .where(
+              and(
+                eq(commerceStorefrontOrderActions.owner_key, input.ownerKey),
+                or(
+                  eq(
+                    commerceStorefrontOrderActions.idempotency_key,
+                    input.idempotencyKey,
+                  ),
+                  and(
+                    eq(commerceStorefrontOrderActions.order_id, order.id),
+                    eq(
+                      commerceStorefrontOrderActions.type,
+                      "post_delivery_refund",
+                    ),
+                  ),
+                ),
+              ),
+            )
+            .limit(1);
+      const action = created ?? known;
+      if (!action) throw new StorefrontOrderError("action_not_found");
+      if (action.case_id !== input.caseId)
+        throw new StorefrontOrderError("refund_not_allowed");
 
       return action;
     },

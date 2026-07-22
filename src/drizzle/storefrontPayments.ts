@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
-import type { PaymentProvider, WebhookEvent } from "../core/payment";
+import type {
+  PaymentProvider,
+  PaymentWebhookEvent,
+  WebhookEvent,
+} from "../core/payment";
 import type {
   PublishedStorefront,
   StorefrontCartLineInput,
@@ -21,6 +25,7 @@ import {
   emitStorefrontOrderEvent,
   storefrontOrderAccessTokenHash,
 } from "./storefrontOrders";
+import { recordStorefrontDispute } from "./storefrontAftercare";
 
 export type SavePaymentInstallationInput = {
   config?: Record<string, unknown>;
@@ -272,9 +277,71 @@ export const createStorefrontPaymentService = (options: {
         input.ownerKey,
         input.installationId,
       );
-      const event: WebhookEvent = await (
-        await options.paymentFor(installed)
-      ).verifyWebhook(input.payload, input.signature);
+      const payment = await options.paymentFor(installed);
+      const verified: PaymentWebhookEvent = payment.verifyEvent
+        ? await payment.verifyEvent(input.payload, input.signature)
+        : {
+            checkout: await payment.verifyWebhook(
+              input.payload,
+              input.signature,
+            ),
+            kind: "checkout",
+          };
+      const providerEventId =
+        verified.kind === "checkout" ? verified.checkout.id : verified.id;
+      const [known] = await options.db
+        .select({ id: commercePaymentEvents.id })
+        .from(commercePaymentEvents)
+        .where(
+          and(
+            eq(commercePaymentEvents.installation_id, installed.id),
+            eq(commercePaymentEvents.provider_event_id, providerEventId),
+          ),
+        )
+        .limit(1);
+      if (known && verified.kind === "dispute")
+        return { duplicate: true, status: "retained" };
+      if (verified.kind === "dispute") {
+        const [order] = await options.db
+          .select()
+          .from(commerceStorefrontOrders)
+          .where(
+            and(
+              eq(commerceStorefrontOrders.owner_key, input.ownerKey),
+              eq(commerceStorefrontOrders.installation_id, installed.id),
+              eq(
+                commerceStorefrontOrders.provider_payment_id,
+                verified.dispute.providerPaymentId,
+              ),
+            ),
+          )
+          .limit(1);
+        if (!order) throw new StorefrontPaymentError("payment_event_invalid");
+
+        return options.db.transaction(async (transaction) => {
+          const [accepted] = await transaction
+            .insert(commercePaymentEvents)
+            .values({
+              event: verified,
+              event_type: verified.type,
+              installation_id: installed.id,
+              intent_id: order.intent_id,
+              provider_event_id: verified.id,
+            })
+            .onConflictDoNothing()
+            .returning({ id: commercePaymentEvents.id });
+          if (!accepted) return { duplicate: true, status: "retained" };
+          const dispute = await recordStorefrontDispute(transaction, {
+            dispute: verified.dispute,
+            eventId: verified.id,
+            orderId: order.id,
+            ownerKey: order.owner_key,
+          });
+
+          return { duplicate: false, status: dispute.status };
+        });
+      }
+      const event: WebhookEvent = verified.checkout;
       const intentId = event.session.metadata.checkoutIntentId;
       if (!intentId || event.session.metadata.ownerKey !== input.ownerKey)
         throw new StorefrontPaymentError("payment_event_invalid");
@@ -299,23 +366,12 @@ export const createStorefrontPaymentService = (options: {
             intent.quote.currency.toUpperCase())
       )
         throw new StorefrontPaymentError("payment_amount_mismatch");
-      const [known] = await options.db
-        .select({ id: commercePaymentEvents.id })
-        .from(commercePaymentEvents)
-        .where(
-          and(
-            eq(commercePaymentEvents.installation_id, installed.id),
-            eq(commercePaymentEvents.provider_event_id, event.id),
-          ),
-        )
-        .limit(1);
       if (known) return { duplicate: true, status: intent.status };
-
       return options.db.transaction(async (transaction) => {
         const [accepted] = await transaction
           .insert(commercePaymentEvents)
           .values({
-            event,
+            event: verified,
             event_type: event.type,
             installation_id: installed.id,
             intent_id: intent.id,
@@ -348,6 +404,7 @@ export const createStorefrontPaymentService = (options: {
             lines: intent.quote.lines,
             owner_key: intent.owner_key,
             provider_session_id: event.session.id,
+            provider_payment_id: event.session.paymentReferenceId ?? null,
             shipping: event.session.shippingAddress,
             status: "paid",
           })

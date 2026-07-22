@@ -73,6 +73,8 @@ export type CheckoutSession = {
   shippingAddress: Address | null;
   metadata: Record<string, string>;
   lineItems: { name: string; quantity: number; amountTotalCents: number }[];
+  /** Provider payment identity used to correlate disputes without retaining raw events. */
+  paymentReferenceId?: string | null;
 };
 
 export type WebhookEvent = {
@@ -91,6 +93,25 @@ export type PaymentRefund = {
   status: "failed" | "pending" | "succeeded";
 };
 
+export type PaymentDispute = {
+  amountCents: number;
+  currency: string;
+  evidenceDueAt: Date | null;
+  providerDisputeId: string;
+  providerPaymentId: string;
+  reason: string;
+  status: string;
+};
+
+export type PaymentWebhookEvent =
+  | { checkout: WebhookEvent; kind: "checkout" }
+  | {
+      dispute: PaymentDispute;
+      id: string;
+      kind: "dispute";
+      type: string;
+    };
+
 export type PaymentProvider = {
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult>;
   createCoupon(input: CreateCouponInput): Promise<string>;
@@ -102,5 +123,10 @@ export type PaymentProvider = {
     idempotencyKey: string,
   ): Promise<PaymentRefund>;
   retrieveRefund(providerRefundId: string): Promise<PaymentRefund>;
+  /** Full signed event projection. Older providers may expose checkout-only verification. */
+  verifyEvent?(
+    payload: string,
+    signature: string,
+  ): Promise<PaymentWebhookEvent>;
   verifyWebhook(payload: string, signature: string): Promise<WebhookEvent>;
 };

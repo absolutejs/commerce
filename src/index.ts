@@ -3,6 +3,7 @@
 // Agnostic logic lives here; provider implementations live in the
 // `commerce-adapters` monorepo (Apache-2.0).
 export * from "./core/analytics";
+export * from "./core/aftercare";
 export * from "./core/cart";
 export * from "./core/catalog";
 export * from "./core/decoration";

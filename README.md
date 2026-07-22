@@ -90,6 +90,17 @@ skips fulfillment before invoking a payment refund with the durable action ID;
 ambiguous fulfillment or payment effects quarantine until an explicit
 tenant-fenced retry.
 
+`createStorefrontAftercareService()` replaces one-off return tables with a
+single durable order-linked case substrate for returns, exchanges, payment
+disputes, and customer support. Guest access reuses the secret checkout token;
+owner and fleet views retain assignment, internal notes, public conversation,
+structured resolutions, optimistic transition fencing, and stable lifecycle
+events. Customer requests and notification delivery are separately gated.
+Signed payment dispute events correlate through the provider payment identity
+and upsert one case without exposing raw provider payloads. Approved full
+returns can enqueue a distinct post-delivery refund action, so shipped-order
+refunds never run through fulfillment cancellation.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing

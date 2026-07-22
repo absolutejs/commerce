@@ -32,12 +32,17 @@ import type {
 import type {
   CheckoutResult,
   CheckoutSession,
+  PaymentWebhookEvent,
   WebhookEvent,
 } from "../core/payment";
 import type {
   FulfillmentOrder,
   FulfillmentOrderRequest,
 } from "../core/fulfillment";
+import type {
+  StorefrontCaseAttachment,
+  StorefrontCaseResolution,
+} from "../core/aftercare";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
 // parameters. This portable boundary preserves typed JSON for Bun, node-postgres,
@@ -433,11 +438,13 @@ export const commercePaymentEvents = pgTable(
   "commerce_payment_events",
   {
     created_at: timestamp().notNull().defaultNow(),
-    event: portableJsonb().$type<WebhookEvent>().notNull(),
+    event: portableJsonb()
+      .$type<PaymentWebhookEvent | WebhookEvent>()
+      .notNull(),
     event_type: varchar({ length: 120 }).notNull(),
     id: uuid().defaultRandom().primaryKey(),
     installation_id: uuid().notNull(),
-    intent_id: uuid().notNull(),
+    intent_id: uuid(),
     provider_event_id: varchar({ length: 255 }).notNull(),
   },
   (table) => [
@@ -465,6 +472,7 @@ export const commerceStorefrontOrders = pgTable(
     lines: portableJsonb().$type<StorefrontCartQuote["lines"]>().notNull(),
     owner_key: varchar({ length: 160 }).notNull(),
     provider_session_id: varchar({ length: 255 }).notNull(),
+    provider_payment_id: varchar({ length: 255 }),
     shipping: portableJsonb().$type<CheckoutSession["shippingAddress"]>(),
     status: varchar({ length: 40 }).notNull().default("paid"),
     updated_at: timestamp().notNull().defaultNow(),
@@ -522,6 +530,7 @@ export const commerceStorefrontOrderActions = pgTable(
   "commerce_storefront_order_actions",
   {
     attempts: integer().notNull().default(0),
+    case_id: uuid(),
     completed_at: timestamp(),
     created_at: timestamp().notNull().defaultNow(),
     fulfillment_result: portableJsonb().$type<FulfillmentOrder>(),
@@ -589,6 +598,117 @@ export const commerceStorefrontOrderEvents = pgTable(
       table.next_attempt_at,
     ),
     index("commerce_storefront_order_events_owner_created_idx").on(
+      table.owner_key,
+      table.created_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontCases = pgTable(
+  "commerce_storefront_cases",
+  {
+    assigned_to: varchar({ length: 200 }),
+    closed_at: timestamp(),
+    created_at: timestamp().notNull().defaultNow(),
+    due_at: timestamp(),
+    id: uuid().defaultRandom().primaryKey(),
+    idempotency_key: varchar({ length: 200 }).notNull(),
+    kind: varchar({ length: 30 }).notNull(),
+    order_id: uuid().notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    priority: varchar({ length: 20 }).notNull().default("normal"),
+    provider_case_id: varchar({ length: 255 }),
+    provider_status: varchar({ length: 80 }),
+    reason: text().notNull(),
+    requested_by: varchar({ length: 200 }).notNull(),
+    resolution: portableJsonb().$type<StorefrontCaseResolution>(),
+    status: varchar({ length: 30 }).notNull().default("open"),
+    subject: varchar({ length: 240 }).notNull(),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_cases_owner_idempotency_idx").on(
+      table.owner_key,
+      table.idempotency_key,
+    ),
+    uniqueIndex("commerce_storefront_cases_provider_idx").on(
+      table.owner_key,
+      table.kind,
+      table.provider_case_id,
+    ),
+    index("commerce_storefront_cases_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+    index("commerce_storefront_cases_order_created_idx").on(
+      table.order_id,
+      table.created_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontCaseMessages = pgTable(
+  "commerce_storefront_case_messages",
+  {
+    attachments: portableJsonb()
+      .$type<StorefrontCaseAttachment[]>()
+      .notNull()
+      .default([]),
+    author_kind: varchar({ length: 30 }).notNull(),
+    author_ref: varchar({ length: 200 }).notNull(),
+    body: text().notNull(),
+    case_id: uuid().notNull(),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    idempotency_key: varchar({ length: 200 }).notNull(),
+    internal: boolean().notNull().default(false),
+    owner_key: varchar({ length: 160 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_case_messages_idempotency_idx").on(
+      table.case_id,
+      table.idempotency_key,
+    ),
+    index("commerce_storefront_case_messages_case_created_idx").on(
+      table.case_id,
+      table.created_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontCaseEvents = pgTable(
+  "commerce_storefront_case_events",
+  {
+    attempts: integer().notNull().default(0),
+    case_id: uuid().notNull(),
+    created_at: timestamp().notNull().defaultNow(),
+    event_key: varchar({ length: 220 }).notNull(),
+    id: uuid().defaultRandom().primaryKey(),
+    kind: varchar({ length: 50 }).notNull(),
+    last_error: text(),
+    lease_expires_at: timestamp(),
+    next_attempt_at: timestamp(),
+    notified_at: timestamp(),
+    order_id: uuid().notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    payload: portableJsonb()
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    status: varchar({ length: 30 }).notNull().default("pending"),
+    updated_at: timestamp().notNull().defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_case_events_key_idx").on(
+      table.case_id,
+      table.event_key,
+    ),
+    index("commerce_storefront_case_events_status_next_idx").on(
+      table.status,
+      table.next_attempt_at,
+    ),
+    index("commerce_storefront_case_events_owner_created_idx").on(
       table.owner_key,
       table.created_at,
     ),
@@ -1025,6 +1145,9 @@ export const commerceDrizzleSchema = {
   pricingTiers: commercePricingTiers,
   subscribers: commerceSubscribers,
   storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
+  storefrontCaseEvents: commerceStorefrontCaseEvents,
+  storefrontCaseMessages: commerceStorefrontCaseMessages,
+  storefrontCases: commerceStorefrontCases,
   storefrontOrderActions: commerceStorefrontOrderActions,
   storefrontOrderEvents: commerceStorefrontOrderEvents,
   storefrontOrders: commerceStorefrontOrders,
@@ -1036,4 +1159,5 @@ export * from "./storefrontMerchandising";
 export * from "./storefrontPayments";
 export * from "./storefrontFulfillment";
 export * from "./storefrontOrders";
+export * from "./storefrontAftercare";
 export * from "./catalogSync";
