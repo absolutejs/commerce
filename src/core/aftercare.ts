@@ -35,6 +35,16 @@ export type StorefrontCaseAttachmentStatus =
   | "quarantined"
   | "scanning";
 
+export type StorefrontCaseEvidenceStatus =
+  | "pending"
+  | "processing"
+  | "quarantined"
+  | "reconciliation_pending"
+  | "reconciling"
+  | "retry"
+  | "staged"
+  | "submitted";
+
 export type StorefrontCaseEvidenceText = Partial<{
   accessActivityLog: string;
   billingAddress: string;

@@ -41,6 +41,9 @@ import type {
 } from "../core/fulfillment";
 import type {
   StorefrontCaseAttachment,
+  StorefrontCaseAttachmentPurpose,
+  StorefrontCaseAttachmentStatus,
+  StorefrontCaseEvidenceStatus,
   StorefrontCaseEvidenceText,
   StorefrontCaseResolution,
 } from "../core/aftercare";
@@ -699,13 +702,19 @@ export const commerceStorefrontCaseAttachments = pgTable(
     last_error: text(),
     lease_expires_at: timestamp({ precision: 3, withTimezone: true }),
     owner_key: varchar({ length: 160 }).notNull(),
-    purpose: varchar({ length: 60 }).notNull().default("uncategorized_file"),
+    purpose: varchar({ length: 60 })
+      .$type<StorefrontCaseAttachmentPurpose>()
+      .notNull()
+      .default("uncategorized_file"),
     retention_expires_at: timestamp({ precision: 3, withTimezone: true }),
     scan_details: text(),
     scan_provider: varchar({ length: 160 }),
     scanned_at: timestamp({ precision: 3, withTimezone: true }),
     sha256: varchar({ length: 64 }).notNull(),
-    status: varchar({ length: 30 }).notNull().default("pending_scan"),
+    status: varchar({ length: 30 })
+      .$type<StorefrontCaseAttachmentStatus>()
+      .notNull()
+      .default("pending_scan"),
     updated_at: timestamp({ precision: 3, withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -757,7 +766,10 @@ export const commerceStorefrontCaseEvidenceSubmissions = pgTable(
     reconciled_at: timestamp({ precision: 3, withTimezone: true }),
     submission_count: integer(),
     submit: boolean().notNull().default(false),
-    status: varchar({ length: 30 }).notNull().default("pending"),
+    status: varchar({ length: 30 })
+      .$type<StorefrontCaseEvidenceStatus>()
+      .notNull()
+      .default("pending"),
     submitted_at: timestamp({ precision: 3, withTimezone: true }),
     updated_at: timestamp({ precision: 3, withTimezone: true })
       .notNull()
