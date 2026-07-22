@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type {
   PaymentProvider,
+  PaymentWebhookEndpoint,
+  PaymentWebhookEndpointManager,
   PaymentWebhookEvent,
   WebhookEvent,
 } from "../core/payment";
@@ -12,12 +14,13 @@ import {
   createStorefrontCheckout,
   resolveStorefrontCart,
 } from "../core/storefront";
-import { and, asc, count, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
   commercePaymentEvents,
   commercePaymentInstallations,
+  commercePaymentWebhookConnections,
   commercePaymentWebhookReceipts,
   commerceStorefrontFulfillmentJobs,
   commerceStorefrontOrders,
@@ -72,6 +75,14 @@ export type PaymentWebhookReceipt = {
   updatedAt: Date;
 };
 
+export type SavePaymentWebhookConnectionInput = {
+  enabledEvents: string[];
+  installationId: string;
+  maxApplyLatencyMs?: number;
+  maxFailureRateBps?: number;
+  url: string;
+};
+
 export const storefrontPaymentWebhookReceiptSelection = () => ({
   appliedAt: commercePaymentWebhookReceipts.applied_at,
   attemptCount: commercePaymentWebhookReceipts.attempt_count,
@@ -98,7 +109,13 @@ export class StorefrontPaymentError extends Error {
       | "installation_not_found"
       | "payment_amount_mismatch"
       | "payment_event_invalid"
-      | "payments_disabled",
+      | "payments_disabled"
+      | "webhook_connection_not_found"
+      | "webhook_connection_invalid"
+      | "webhook_canary_failed"
+      | "webhook_inspection_disabled"
+      | "webhook_management_disabled"
+      | "webhook_management_unavailable",
   ) {
     super(`Storefront payment failed (${code})`);
     this.name = "StorefrontPaymentError";
@@ -127,8 +144,23 @@ export const createStorefrontPaymentService = (options: {
   db: CommerceDb;
   enabled?: boolean;
   paymentFor: (installation: PaymentInstallation) => Promise<PaymentProvider>;
+  storeWebhookSigningSecret?: (
+    ownerKey: string,
+    alias: string,
+    value: string,
+  ) => Promise<void>;
+  verifyWebhookSigningSecret?: (
+    installation: PaymentInstallation,
+  ) => Promise<boolean>;
+  webhookEndpointFor?: (
+    installation: PaymentInstallation,
+  ) => Promise<PaymentWebhookEndpointManager>;
+  webhookInspectionEnabled?: boolean;
+  webhookManagementEnabled?: boolean;
 }) => {
   const enabled = options.enabled ?? false;
+  const webhookInspectionEnabled = options.webhookInspectionEnabled ?? false;
+  const webhookManagementEnabled = options.webhookManagementEnabled ?? false;
   const WEBHOOK_PROCESSING_STALE_MS = 60_000;
   const installation = async (ownerKey: string, installationId?: string) => {
     const [row] = await options.db
@@ -382,6 +414,18 @@ export const createStorefrontPaymentService = (options: {
           updated_at: new Date(),
         })
         .where(eq(commercePaymentWebhookReceipts.id, claimed.id));
+      await options.db
+        .update(commercePaymentWebhookConnections)
+        .set({ last_delivery_at: new Date(), updated_at: new Date() })
+        .where(
+          and(
+            eq(
+              commercePaymentWebhookConnections.installation_id,
+              claimed.installation_id,
+            ),
+            eq(commercePaymentWebhookConnections.owner_key, ownerKey),
+          ),
+        );
 
       return result;
     } catch (error) {
@@ -396,6 +440,155 @@ export const createStorefrontPaymentService = (options: {
         })
         .where(eq(commercePaymentWebhookReceipts.id, claimed.id));
       throw error;
+    }
+  };
+  const webhookConnection = async (
+    ownerKey: string,
+    installationId: string,
+  ) => {
+    const [connection] = await options.db
+      .select()
+      .from(commercePaymentWebhookConnections)
+      .where(
+        and(
+          eq(commercePaymentWebhookConnections.owner_key, ownerKey),
+          eq(commercePaymentWebhookConnections.installation_id, installationId),
+        ),
+      )
+      .limit(1);
+    if (!connection)
+      throw new StorefrontPaymentError("webhook_connection_not_found");
+
+    return connection;
+  };
+  const endpointManager = async (installed: PaymentInstallation) => {
+    if (!options.webhookEndpointFor)
+      throw new StorefrontPaymentError("webhook_management_unavailable");
+
+    return options.webhookEndpointFor(installed);
+  };
+  const normalizedEvents = (events: string[]) =>
+    [...new Set(events.map((event) => event.trim()).filter(Boolean))].sort();
+  const validatedConnectionInput = (
+    input: SavePaymentWebhookConnectionInput,
+  ) => {
+    let url: URL;
+    try {
+      url = new URL(input.url);
+    } catch {
+      throw new StorefrontPaymentError("webhook_connection_invalid");
+    }
+    const events = normalizedEvents(input.enabledEvents);
+    const maxApplyLatencyMs = input.maxApplyLatencyMs ?? 5_000;
+    const maxFailureRateBps = input.maxFailureRateBps ?? 100;
+    if (
+      url.protocol !== "https:" ||
+      events.length === 0 ||
+      maxApplyLatencyMs < 1 ||
+      maxFailureRateBps < 0 ||
+      maxFailureRateBps > 10_000
+    )
+      throw new StorefrontPaymentError("webhook_connection_invalid");
+
+    return {
+      events,
+      maxApplyLatencyMs,
+      maxFailureRateBps,
+      url: url.toString(),
+    };
+  };
+  const endpointDrift = (
+    connection: typeof commercePaymentWebhookConnections.$inferSelect,
+    observed: PaymentWebhookEndpoint,
+  ) => {
+    const drift: string[] = [];
+    if (observed.url !== connection.desired_url) drift.push("url");
+    if (observed.status !== "enabled") drift.push("status");
+    if (
+      JSON.stringify(normalizedEvents(observed.enabledEvents)) !==
+      JSON.stringify(normalizedEvents(connection.desired_events))
+    )
+      drift.push("enabled_events");
+
+    return drift;
+  };
+  const retainEndpointObservation = async (
+    connection: typeof commercePaymentWebhookConnections.$inferSelect,
+    observed: PaymentWebhookEndpoint,
+  ) => {
+    const drift = endpointDrift(connection, observed);
+    const [updated] = await options.db
+      .update(commercePaymentWebhookConnections)
+      .set({
+        last_error:
+          drift.length > 0 ? `Provider drift: ${drift.join(", ")}` : null,
+        last_inspected_at: new Date(),
+        livemode: observed.livemode,
+        observed_events: normalizedEvents(observed.enabledEvents),
+        observed_url: observed.url,
+        provider_status: observed.status,
+        status: drift.length > 0 ? "drift" : "healthy",
+        updated_at: new Date(),
+      })
+      .where(
+        and(
+          eq(
+            commercePaymentWebhookConnections.installation_id,
+            connection.installation_id,
+          ),
+          eq(commercePaymentWebhookConnections.owner_key, connection.owner_key),
+        ),
+      )
+      .returning();
+
+    return { connection: updated ?? connection, drift };
+  };
+  const runSigningSecretCanary = async (installed: PaymentInstallation) => {
+    if (!options.verifyWebhookSigningSecret)
+      throw new StorefrontPaymentError("webhook_management_unavailable");
+    const passed = await options.verifyWebhookSigningSecret(installed);
+    await options.db
+      .update(commercePaymentWebhookConnections)
+      .set({
+        canary_status: passed ? "passed" : "failed",
+        last_canary_at: new Date(),
+        last_error: passed ? null : "Signing-secret canary failed",
+        status: passed ? "staged" : "failed",
+        updated_at: new Date(),
+      })
+      .where(
+        and(
+          eq(commercePaymentWebhookConnections.installation_id, installed.id),
+          eq(commercePaymentWebhookConnections.owner_key, installed.owner_key),
+        ),
+      );
+    if (!passed) throw new StorefrontPaymentError("webhook_canary_failed");
+
+    return true;
+  };
+  const deactivateCreatedEndpoint = async (
+    manager: PaymentWebhookEndpointManager,
+    endpointId: string,
+  ) => {
+    try {
+      await manager.delete(endpointId);
+
+      return null;
+    } catch (deleteError) {
+      try {
+        await manager.update(endpointId, { disabled: true });
+
+        return null;
+      } catch (disableError) {
+        const deleteMessage =
+          deleteError instanceof Error ? deleteError.message : "delete failed";
+        const disableMessage =
+          disableError instanceof Error
+            ? disableError.message
+            : "disable failed";
+
+        return `Provider cleanup required (${deleteMessage}; ${disableMessage})`;
+      }
     }
   };
 
@@ -549,6 +742,91 @@ export const createStorefrontPaymentService = (options: {
         .select()
         .from(commercePaymentInstallations)
         .where(eq(commercePaymentInstallations.owner_key, ownerKey)),
+    inspectWebhookConnection: async (
+      ownerKey: string,
+      installationId: string,
+    ) => {
+      if (!webhookInspectionEnabled)
+        throw new StorefrontPaymentError("webhook_inspection_disabled");
+      const installed = await installation(ownerKey, installationId);
+      const connection = await webhookConnection(ownerKey, installationId);
+      if (!connection.provider_endpoint_id)
+        throw new StorefrontPaymentError("webhook_connection_not_found");
+      const manager = await endpointManager(installed);
+      const observed = await manager.retrieve(connection.provider_endpoint_id);
+
+      return retainEndpointObservation(connection, observed);
+    },
+    listWebhookConnections: async (ownerKey?: string) => {
+      const since = new Date(Date.now() - 24 * 60 * 60 * 1_000);
+      const [connections, receiptRows] = await Promise.all([
+        options.db
+          .select()
+          .from(commercePaymentWebhookConnections)
+          .where(
+            ownerKey
+              ? eq(commercePaymentWebhookConnections.owner_key, ownerKey)
+              : undefined,
+          )
+          .orderBy(
+            commercePaymentWebhookConnections.owner_key,
+            commercePaymentWebhookConnections.installation_id,
+          ),
+        options.db
+          .select({
+            applied: sql<number>`count(*) filter (where ${commercePaymentWebhookReceipts.status} = 'applied')::int`,
+            failed: sql<number>`count(*) filter (where ${commercePaymentWebhookReceipts.status} in ('failed', 'quarantined'))::int`,
+            installationId: commercePaymentWebhookReceipts.installation_id,
+            p95ApplyLatencyMs: sql<
+              number | null
+            >`percentile_cont(0.95) within group (order by extract(epoch from (${commercePaymentWebhookReceipts.applied_at} - ${commercePaymentWebhookReceipts.received_at})) * 1000) filter (where ${commercePaymentWebhookReceipts.applied_at} is not null)`,
+            total: sql<number>`count(*)::int`,
+          })
+          .from(commercePaymentWebhookReceipts)
+          .where(
+            and(
+              gte(commercePaymentWebhookReceipts.received_at, since),
+              ...(ownerKey
+                ? [eq(commercePaymentWebhookReceipts.owner_key, ownerKey)]
+                : []),
+            ),
+          )
+          .groupBy(commercePaymentWebhookReceipts.installation_id),
+      ]);
+      const receiptsByInstallation = new Map(
+        receiptRows.map((row) => [row.installationId, row]),
+      );
+
+      return connections.map((connection) => {
+        const receipts = receiptsByInstallation.get(connection.installation_id);
+        const total = receipts?.total ?? 0;
+        const failed = receipts?.failed ?? 0;
+        const failureRateBps =
+          total === 0 ? 0 : Math.round((failed / total) * 10_000);
+        const p95ApplyLatencyMs = receipts?.p95ApplyLatencyMs ?? null;
+        const violations = [
+          ...(failureRateBps > connection.max_failure_rate_bps
+            ? ["failure_rate"]
+            : []),
+          ...(p95ApplyLatencyMs !== null &&
+          p95ApplyLatencyMs > connection.max_apply_latency_ms
+            ? ["apply_latency"]
+            : []),
+        ];
+
+        return {
+          ...connection,
+          deliverySlo24h: {
+            applied: receipts?.applied ?? 0,
+            failed,
+            failureRateBps,
+            p95ApplyLatencyMs,
+            total,
+            violations,
+          },
+        };
+      });
+    },
     processWebhook: async (input: {
       installationId: string;
       ownerKey: string;
@@ -689,6 +967,136 @@ export const createStorefrontPaymentService = (options: {
       );
     },
     retryWebhookReceipt: applyReceipt,
+    registerWebhookConnection: async (
+      ownerKey: string,
+      installationId: string,
+    ) => {
+      if (!webhookManagementEnabled)
+        throw new StorefrontPaymentError("webhook_management_disabled");
+      if (!options.storeWebhookSigningSecret)
+        throw new StorefrontPaymentError("webhook_management_unavailable");
+      const installed = await installation(ownerKey, installationId);
+      const connection = await webhookConnection(ownerKey, installationId);
+      const manager = await endpointManager(installed);
+      const previousEndpointId = connection.provider_endpoint_id;
+      let createdEndpointId: string | undefined;
+      try {
+        const created = await manager.create({
+          disabled: true,
+          enabledEvents: normalizedEvents(connection.desired_events),
+          url: connection.desired_url,
+        });
+        createdEndpointId = created.id;
+        await options.db
+          .update(commercePaymentWebhookConnections)
+          .set({
+            last_error: null,
+            livemode: created.livemode,
+            observed_events: normalizedEvents(created.enabledEvents),
+            observed_url: created.url,
+            provider_endpoint_id: created.id,
+            provider_status: created.status,
+            status: "staged",
+            updated_at: new Date(),
+          })
+          .where(
+            and(
+              eq(
+                commercePaymentWebhookConnections.installation_id,
+                installationId,
+              ),
+              eq(commercePaymentWebhookConnections.owner_key, ownerKey),
+            ),
+          );
+        await options.storeWebhookSigningSecret(
+          ownerKey,
+          installed.webhook_secret_alias,
+          created.signingSecret,
+        );
+        await runSigningSecretCanary(installed);
+        const enabledEndpoint = await manager.update(created.id, {
+          disabled: false,
+          enabledEvents: normalizedEvents(connection.desired_events),
+          url: connection.desired_url,
+        });
+        const retained = await retainEndpointObservation(
+          { ...connection, provider_endpoint_id: created.id },
+          enabledEndpoint,
+        );
+        if (previousEndpointId && previousEndpointId !== created.id)
+          await manager.update(previousEndpointId, { disabled: true });
+
+        return retained;
+      } catch (error) {
+        const cleanupError = createdEndpointId
+          ? await deactivateCreatedEndpoint(manager, createdEndpointId)
+          : null;
+        const registrationError =
+          error instanceof Error ? error.message : "Registration failed";
+        await options.db
+          .update(commercePaymentWebhookConnections)
+          .set({
+            last_error: cleanupError
+              ? `${registrationError}. ${cleanupError}`
+              : registrationError,
+            status: "failed",
+            updated_at: new Date(),
+          })
+          .where(
+            and(
+              eq(
+                commercePaymentWebhookConnections.installation_id,
+                installationId,
+              ),
+              eq(commercePaymentWebhookConnections.owner_key, ownerKey),
+            ),
+          );
+        throw error;
+      }
+    },
+    runWebhookSigningSecretCanary: async (
+      ownerKey: string,
+      installationId: string,
+    ) => {
+      if (!webhookManagementEnabled)
+        throw new StorefrontPaymentError("webhook_management_disabled");
+      const installed = await installation(ownerKey, installationId);
+      await webhookConnection(ownerKey, installationId);
+      await runSigningSecretCanary(installed);
+
+      return webhookConnection(ownerKey, installationId);
+    },
+    saveWebhookConnection: async (
+      ownerKey: string,
+      input: SavePaymentWebhookConnectionInput,
+    ) => {
+      await installation(ownerKey, input.installationId);
+      const validated = validatedConnectionInput(input);
+      const [saved] = await options.db
+        .insert(commercePaymentWebhookConnections)
+        .values({
+          desired_events: validated.events,
+          desired_url: validated.url,
+          installation_id: input.installationId,
+          max_apply_latency_ms: validated.maxApplyLatencyMs,
+          max_failure_rate_bps: validated.maxFailureRateBps,
+          owner_key: ownerKey,
+        })
+        .onConflictDoUpdate({
+          set: {
+            desired_events: validated.events,
+            desired_url: validated.url,
+            max_apply_latency_ms: validated.maxApplyLatencyMs,
+            max_failure_rate_bps: validated.maxFailureRateBps,
+            status: "draft",
+            updated_at: new Date(),
+          },
+          target: commercePaymentWebhookConnections.installation_id,
+        })
+        .returning();
+
+      return saved;
+    },
     saveInstallation: async (
       ownerKey: string,
       input: SavePaymentInstallationInput,

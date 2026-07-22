@@ -493,6 +493,40 @@ export const commercePaymentWebhookReceipts = pgTable(
   ],
 );
 
+export const commercePaymentWebhookConnections = pgTable(
+  "commerce_payment_webhook_connections",
+  {
+    canary_status: varchar({ length: 20 }).notNull().default("unverified"),
+    created_at: timestamp().notNull().defaultNow(),
+    desired_events: portableJsonb().$type<string[]>().notNull(),
+    desired_url: varchar({ length: 2048 }).notNull(),
+    installation_id: uuid().primaryKey(),
+    last_canary_at: timestamp(),
+    last_delivery_at: timestamp(),
+    last_error: text(),
+    last_inspected_at: timestamp(),
+    livemode: boolean(),
+    max_apply_latency_ms: integer().notNull().default(5_000),
+    max_failure_rate_bps: integer().notNull().default(100),
+    observed_events: portableJsonb().$type<string[]>(),
+    observed_url: varchar({ length: 2048 }),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider_endpoint_id: varchar({ length: 255 }),
+    provider_status: varchar({ length: 20 }),
+    status: varchar({ length: 20 }).notNull().default("draft"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    index("commerce_payment_webhook_connections_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+    uniqueIndex("commerce_payment_webhook_connections_provider_idx").on(
+      table.provider_endpoint_id,
+    ),
+  ],
+);
+
 export const commerceStorefrontOrders = pgTable(
   "commerce_storefront_orders",
   {
@@ -1353,6 +1387,7 @@ export const commerceDrizzleSchema = {
   fulfillmentVariantMappings: commerceFulfillmentVariantMappings,
   paymentEvents: commercePaymentEvents,
   paymentInstallations: commercePaymentInstallations,
+  paymentWebhookConnections: commercePaymentWebhookConnections,
   paymentWebhookReceipts: commercePaymentWebhookReceipts,
   invoices: commerceInvoices,
   favorites: commerceFavorites,

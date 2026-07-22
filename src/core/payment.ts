@@ -147,6 +147,36 @@ export type PaymentWebhookEvent =
       type: string;
     };
 
+export type PaymentWebhookEndpoint = {
+  enabledEvents: string[];
+  id: string;
+  livemode: boolean;
+  status: "disabled" | "enabled";
+  url: string;
+};
+
+export type CreatedPaymentWebhookEndpoint = PaymentWebhookEndpoint & {
+  signingSecret: string;
+};
+
+export type PaymentWebhookEndpointManager = {
+  create(input: {
+    disabled: boolean;
+    enabledEvents: string[];
+    url: string;
+  }): Promise<CreatedPaymentWebhookEndpoint>;
+  delete(endpointId: string): Promise<void>;
+  retrieve(endpointId: string): Promise<PaymentWebhookEndpoint>;
+  update(
+    endpointId: string,
+    input: {
+      disabled?: boolean;
+      enabledEvents?: string[];
+      url?: string;
+    },
+  ): Promise<PaymentWebhookEndpoint>;
+};
+
 export type PaymentProvider = {
   createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult>;
   createCoupon(input: CreateCouponInput): Promise<string>;
