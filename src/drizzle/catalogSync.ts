@@ -7,6 +7,7 @@ import {
   ilike,
   inArray,
   isNull,
+  lte,
   ne,
   or,
   sql,
@@ -30,6 +31,7 @@ import {
 const DEFAULT_PAGE_SIZE = 250;
 const MAX_PAGE_SIZE = 250;
 const MAX_SYNC_PAGES = 1_000;
+const SYNC_LEASE_MS = 15 * 60 * 1_000;
 
 export type CatalogSyncTrigger = "manual" | "scheduled" | "repair";
 
@@ -59,6 +61,13 @@ export class CatalogSyncError extends Error {
   ) {
     super(`Catalog synchronization failed (${code})`);
     this.name = "CatalogSyncError";
+  }
+}
+
+export class CatalogSyncInProgressError extends CatalogSyncError {
+  constructor(sourceId: string) {
+    super("sync_in_progress", sourceId);
+    this.name = "CatalogSyncInProgressError";
   }
 }
 
@@ -266,6 +275,7 @@ export const synchronizeCatalogSource = async (input: {
   const now = input.now ?? (() => new Date());
   const startedAt = now();
   const generation = randomUUID();
+  const leaseExpiresAt = new Date(startedAt.getTime() + SYNC_LEASE_MS);
   const pageSize = Math.min(
     MAX_PAGE_SIZE,
     Math.max(1, input.pageSize ?? DEFAULT_PAGE_SIZE),
@@ -283,25 +293,36 @@ export const synchronizeCatalogSource = async (input: {
       owner_key: input.source.ownerKey,
       provider: input.source.provider,
       settings: input.source.settings ?? {},
+      status: "active",
+      updated_at: startedAt,
+    })
+    .onConflictDoNothing();
+  const [claimed] = await input.db
+    .update(commerceCatalogSources)
+    .set({
+      last_error: null,
+      name: input.source.name,
+      owner_key: input.source.ownerKey,
+      provider: input.source.provider,
+      settings: input.source.settings ?? {},
       status: "syncing",
       sync_generation: generation,
+      sync_lease_expires_at: leaseExpiresAt,
       sync_started_at: startedAt,
       updated_at: startedAt,
     })
-    .onConflictDoUpdate({
-      set: {
-        last_error: null,
-        name: input.source.name,
-        owner_key: input.source.ownerKey,
-        provider: input.source.provider,
-        settings: input.source.settings ?? {},
-        status: "syncing",
-        sync_generation: generation,
-        sync_started_at: startedAt,
-        updated_at: startedAt,
-      },
-      target: commerceCatalogSources.id,
-    });
+    .where(
+      and(
+        eq(commerceCatalogSources.id, input.source.id),
+        or(
+          ne(commerceCatalogSources.status, "syncing"),
+          isNull(commerceCatalogSources.sync_lease_expires_at),
+          lte(commerceCatalogSources.sync_lease_expires_at, startedAt),
+        ),
+      ),
+    )
+    .returning({ id: commerceCatalogSources.id });
+  if (!claimed) throw new CatalogSyncInProgressError(input.source.id);
   const [run] = await input.db
     .insert(commerceCatalogSyncRuns)
     .values({
@@ -359,15 +380,24 @@ export const synchronizeCatalogSource = async (input: {
       productsSynced += products.length;
       variantsSynced += variants.length;
       const nextCursor = page.nextCursor?.trim() || undefined;
-      await input.db
+      const [renewed] = await input.db
         .update(commerceCatalogSources)
         .set({
           cursor: nextCursor,
           products_synced: productsSynced,
+          sync_lease_expires_at: new Date(now().getTime() + SYNC_LEASE_MS),
           updated_at: now(),
           variants_synced: variantsSynced,
         })
-        .where(eq(commerceCatalogSources.id, input.source.id));
+        .where(
+          and(
+            eq(commerceCatalogSources.id, input.source.id),
+            eq(commerceCatalogSources.sync_generation, generation),
+          ),
+        )
+        .returning({ id: commerceCatalogSources.id });
+      if (!renewed)
+        throw new CatalogSyncError("sync_lease_lost", input.source.id);
       if (!nextCursor) break;
       if (seenCursors.has(nextCursor))
         throw new CatalogSyncError("cursor_repeated", input.source.id);
@@ -410,11 +440,17 @@ export const synchronizeCatalogSource = async (input: {
           last_synced_at: completedAt,
           products_synced: productsSynced,
           status: "active",
+          sync_lease_expires_at: null,
           sync_started_at: null,
           updated_at: completedAt,
           variants_synced: variantsSynced,
         })
-        .where(eq(commerceCatalogSources.id, input.source.id)),
+        .where(
+          and(
+            eq(commerceCatalogSources.id, input.source.id),
+            eq(commerceCatalogSources.sync_generation, generation),
+          ),
+        ),
       input.db
         .update(commerceCatalogSyncRuns)
         .set({
@@ -447,10 +483,16 @@ export const synchronizeCatalogSource = async (input: {
           cursor,
           last_error: code,
           status: "error",
+          sync_lease_expires_at: null,
           sync_started_at: null,
           updated_at: completedAt,
         })
-        .where(eq(commerceCatalogSources.id, input.source.id)),
+        .where(
+          and(
+            eq(commerceCatalogSources.id, input.source.id),
+            eq(commerceCatalogSources.sync_generation, generation),
+          ),
+        ),
       input.db
         .update(commerceCatalogSyncRuns)
         .set({

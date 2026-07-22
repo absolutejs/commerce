@@ -102,6 +102,7 @@ export const commerceCatalogSources = pgTable("commerce_catalog_sources", {
   settings: portableJsonb().$type<Record<string, unknown>>().default({}),
   status: varchar({ length: 20 }).notNull().default("active"),
   sync_generation: varchar({ length: 64 }),
+  sync_lease_expires_at: timestamp(),
   sync_started_at: timestamp(),
   variants_synced: integer().notNull().default(0),
   updated_at: timestamp().notNull().defaultNow(),
