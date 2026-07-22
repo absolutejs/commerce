@@ -630,8 +630,11 @@ export const listCatalogTaxonomy = async (db: CommerceDb, sourceId: string) =>
     slug: row.slug,
   }));
 
-export const listCatalogSyncSources = (db: CommerceDb, ownerKey?: string) =>
-  db
+export const listCatalogSyncSources = async (
+  db: CommerceDb,
+  ownerKey?: string,
+) =>
+  await db
     .select()
     .from(commerceCatalogSources)
     .where(
@@ -642,11 +645,11 @@ export const listCatalogSyncSources = (db: CommerceDb, ownerKey?: string) =>
       asc(commerceCatalogSources.name),
     );
 
-export const listCatalogSyncRuns = (
+export const listCatalogSyncRuns = async (
   db: CommerceDb,
   input: { limit?: number; sourceId?: string } = {},
 ) =>
-  db
+  await db
     .select()
     .from(commerceCatalogSyncRuns)
     .where(
