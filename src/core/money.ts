@@ -13,10 +13,10 @@ export const toCents = (value: number) => Math.round(value * CENTS);
 export const fromCents = (cents: number) => cents / CENTS;
 
 /** Format a major-unit amount, USD by default. */
-export const formatPrice = (value: number, currency = 'USD') => {
-	const code = currency.toUpperCase();
+export const formatPrice = (value: number, currency = "USD") => {
+  const code = currency.toUpperCase();
 
-	return code === 'USD'
-		? `$${value.toFixed(2)}`
-		: `${value.toFixed(2)} ${code}`;
+  return code === "USD"
+    ? `$${value.toFixed(2)}`
+    : `${value.toFixed(2)} ${code}`;
 };

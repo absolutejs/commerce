@@ -25,6 +25,15 @@ import type {
   DecorationArea,
   ProductMedia,
 } from "../core/catalog";
+import type {
+  StorefrontCartLineInput,
+  StorefrontCartQuote,
+} from "../core/storefront";
+import type {
+  CheckoutResult,
+  CheckoutSession,
+  WebhookEvent,
+} from "../core/payment";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
 // parameters. This portable boundary preserves typed JSON for Bun, node-postgres,
@@ -348,6 +357,146 @@ export const commerceCatalogCollectionListings = pgTable(
     index("commerce_collection_listing_position_idx").on(
       table.collection_id,
       table.position,
+    ),
+  ],
+);
+
+export const commercePaymentInstallations = pgTable(
+  "commerce_payment_installations",
+  {
+    config: portableJsonb()
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    label: varchar({ length: 160 }).notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider: varchar({ length: 120 }).notNull(),
+    secret_alias: varchar({ length: 120 }).notNull(),
+    status: varchar({ length: 20 }).notNull().default("disabled"),
+    updated_at: timestamp().notNull().defaultNow(),
+    webhook_secret_alias: varchar({ length: 120 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("commerce_payment_installations_owner_provider_idx").on(
+      table.owner_key,
+      table.provider,
+    ),
+    index("commerce_payment_installations_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+  ],
+);
+
+export const commerceCheckoutIntents = pgTable(
+  "commerce_checkout_intents",
+  {
+    cart: portableJsonb().$type<StorefrontCartLineInput[]>().notNull(),
+    catalog_id: uuid().notNull(),
+    checkout_result: portableJsonb().$type<CheckoutResult>(),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    idempotency_key: varchar({ length: 200 }).notNull(),
+    installation_id: uuid().notNull(),
+    last_error: text(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider_session_id: varchar({ length: 255 }),
+    quote: portableJsonb().$type<StorefrontCartQuote>().notNull(),
+    request_digest: varchar({ length: 64 }).notNull(),
+    status: varchar({ length: 20 }).notNull().default("creating"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("commerce_checkout_intents_owner_idempotency_idx").on(
+      table.owner_key,
+      table.idempotency_key,
+    ),
+    uniqueIndex("commerce_checkout_intents_provider_session_idx").on(
+      table.installation_id,
+      table.provider_session_id,
+    ),
+    index("commerce_checkout_intents_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+  ],
+);
+
+export const commercePaymentEvents = pgTable(
+  "commerce_payment_events",
+  {
+    created_at: timestamp().notNull().defaultNow(),
+    event: portableJsonb().$type<WebhookEvent>().notNull(),
+    event_type: varchar({ length: 120 }).notNull(),
+    id: uuid().defaultRandom().primaryKey(),
+    installation_id: uuid().notNull(),
+    intent_id: uuid().notNull(),
+    provider_event_id: varchar({ length: 255 }).notNull(),
+  },
+  (table) => [
+    uniqueIndex("commerce_payment_events_installation_event_idx").on(
+      table.installation_id,
+      table.provider_event_id,
+    ),
+    index("commerce_payment_events_intent_idx").on(table.intent_id),
+  ],
+);
+
+export const commerceStorefrontOrders = pgTable(
+  "commerce_storefront_orders",
+  {
+    amount_cents: integer().notNull(),
+    catalog_id: uuid().notNull(),
+    created_at: timestamp().notNull().defaultNow(),
+    currency: varchar({ length: 10 }).notNull(),
+    customer_email: varchar({ length: 320 }),
+    customer_name: varchar({ length: 320 }),
+    id: uuid().defaultRandom().primaryKey(),
+    installation_id: uuid().notNull(),
+    intent_id: uuid().notNull(),
+    lines: portableJsonb().$type<StorefrontCartQuote["lines"]>().notNull(),
+    owner_key: varchar({ length: 160 }).notNull(),
+    provider_session_id: varchar({ length: 255 }).notNull(),
+    shipping: portableJsonb().$type<CheckoutSession["shippingAddress"]>(),
+    status: varchar({ length: 20 }).notNull().default("paid"),
+    updated_at: timestamp().notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_orders_intent_idx").on(table.intent_id),
+    uniqueIndex("commerce_storefront_orders_session_idx").on(
+      table.installation_id,
+      table.provider_session_id,
+    ),
+    index("commerce_storefront_orders_owner_created_idx").on(
+      table.owner_key,
+      table.created_at,
+    ),
+  ],
+);
+
+export const commerceStorefrontFulfillmentJobs = pgTable(
+  "commerce_storefront_fulfillment_jobs",
+  {
+    attempts: integer().notNull().default(0),
+    created_at: timestamp().notNull().defaultNow(),
+    id: uuid().defaultRandom().primaryKey(),
+    last_error: text(),
+    lease_expires_at: timestamp(),
+    order_id: uuid().notNull(),
+    payload: portableJsonb().$type<Record<string, unknown>>().notNull(),
+    status: varchar({ length: 20 }).notNull().default("pending"),
+    updated_at: timestamp().notNull().defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_fulfillment_jobs_order_idx").on(
+      table.order_id,
+    ),
+    index("commerce_storefront_fulfillment_jobs_status_lease_idx").on(
+      table.status,
+      table.lease_expires_at,
     ),
   ],
 );
@@ -732,6 +881,7 @@ export const commerceDrizzleSchema = {
   catalogSyncRuns: commerceCatalogSyncRuns,
   catalogTaxa: commerceCatalogTaxa,
   catalogs: commerceCatalogs,
+  checkoutIntents: commerceCheckoutIntents,
   companies: commerceCompanies,
   designs: commerceDesigns,
   discounts: commerceDiscounts,
@@ -739,6 +889,8 @@ export const commerceDrizzleSchema = {
   fulfillmentEvents: commerceFulfillmentEvents,
   fulfillmentJobs: commerceFulfillmentJobs,
   fulfillmentVariantMappings: commerceFulfillmentVariantMappings,
+  paymentEvents: commercePaymentEvents,
+  paymentInstallations: commercePaymentInstallations,
   invoices: commerceInvoices,
   favorites: commerceFavorites,
   galleryItems: commerceGalleryItems,
@@ -761,9 +913,12 @@ export const commerceDrizzleSchema = {
   savedDesigns: commerceSavedDesigns,
   pricingTiers: commercePricingTiers,
   subscribers: commerceSubscribers,
+  storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
+  storefrontOrders: commerceStorefrontOrders,
 };
 
 export * from "./queries";
 export * from "./catalogQueries";
 export * from "./storefrontMerchandising";
+export * from "./storefrontPayments";
 export * from "./catalogSync";

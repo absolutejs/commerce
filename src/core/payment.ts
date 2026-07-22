@@ -76,6 +76,8 @@ export type CheckoutSession = {
 };
 
 export type WebhookEvent = {
+  /** Provider-stable delivery/event identity used for replay protection. */
+  id: string;
   type: string;
   /** A checkout that completed successfully (sync or async). */
   isComplete: boolean;

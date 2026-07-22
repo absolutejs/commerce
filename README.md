@@ -64,6 +64,14 @@ rechecks availability and buyer-field/artwork policy, and calculates every
 price from canonical data. `createStorefrontCheckout()` forwards only that
 resolved quote plus a host-owned idempotency key to a `PaymentProvider`.
 
+`createStorefrontPaymentService()` adds the durable merchant-payment boundary.
+Provider installations are tenant fenced, reference host-owned secret aliases,
+and are disabled unless both the host feature gate and installation state allow
+payments. Checkout intent identity is persisted before provider work. Signed
+webhooks are verified before persistence, deduplicated by provider event id,
+and transactionally create one paid order and one pending fulfillment job after
+checking the tenant, installation, session, amount, and currency.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing
@@ -105,7 +113,7 @@ Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 
 - Additional supplier adapters and incremental catalog synchronization
 - Order lifecycle + production-stage state machine
-- Durable provider-webhook order orchestration over the server-repriced checkout
+- Fulfillment-worker leasing and provider submission for pending storefront jobs
 - Discount-code engine
 - B2B quotes → deposit → fulfill
 - Branded transactional emails, proof-approval, `./drizzle` schema builders,
