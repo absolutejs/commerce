@@ -666,9 +666,13 @@ export const recordStorefrontDispute = async (
     ownerKey: string;
   },
 ) => {
-  const status: StorefrontCaseStatus = ["won", "lost", "closed"].includes(
-    input.dispute.status,
-  )
+  const status: StorefrontCaseStatus = [
+    "closed",
+    "lost",
+    "prevented",
+    "warning_closed",
+    "won",
+  ].includes(input.dispute.status)
     ? "resolved"
     : input.dispute.status.includes("review")
       ? "under_review"
