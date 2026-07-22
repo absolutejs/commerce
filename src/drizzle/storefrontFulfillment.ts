@@ -47,6 +47,11 @@ export type StorefrontFulfillmentJob = {
   worker_id: string | null;
 };
 
+export type StorefrontFulfillmentFleetJob = {
+  job: StorefrontFulfillmentJob;
+  ownerKey: string;
+};
+
 export type StorefrontFulfillmentOrder = {
   amount_cents: number;
   catalog_id: string;
@@ -279,12 +284,22 @@ export const createStorefrontFulfillmentService = (options: {
           commerceFulfillmentAccounts.owner_key,
           commerceFulfillmentAccounts.label,
         )) satisfies StorefrontFulfillmentInstallation[],
-      jobs: (await options.db
-        .select()
-        .from(commerceStorefrontFulfillmentJobs)
-        .orderBy(
-          asc(commerceStorefrontFulfillmentJobs.created_at),
-        )) satisfies StorefrontFulfillmentJob[],
+      jobs: (
+        await options.db
+          .select({
+            job: commerceStorefrontFulfillmentJobs,
+            ownerKey: commerceStorefrontOrders.owner_key,
+          })
+          .from(commerceStorefrontFulfillmentJobs)
+          .innerJoin(
+            commerceStorefrontOrders,
+            eq(
+              commerceStorefrontOrders.id,
+              commerceStorefrontFulfillmentJobs.order_id,
+            ),
+          )
+          .orderBy(asc(commerceStorefrontFulfillmentJobs.created_at))
+      ) satisfies StorefrontFulfillmentFleetJob[],
     }),
     listOwner: async (ownerKey: string) => ({
       installations: (await options.db
