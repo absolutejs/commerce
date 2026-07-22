@@ -27,12 +27,12 @@ tenant catalogs while every store remains independently merchandised.
 import {
 	findVariantByOptions,
 	listingPriceCents,
-	type CatalogSourceProvider
-} from '@absolutejs/commerce';
+	type CatalogSourceProvider,
+} from "@absolutejs/commerce";
 
 const variant = findVariantByOptions(product.variants, {
-	Color: 'Navy',
-	Size: 'XL'
+	Color: "Navy",
+	Size: "XL",
 });
 const price = listingPriceCents(product.listing, variant);
 ```
@@ -40,6 +40,13 @@ const price = listingPriceCents(product.listing, variant);
 The `@absolutejs/commerce/drizzle` export includes normalized catalog,
 products, variants, listings, collections, and collection-membership tables,
 plus idempotent supplier-ingestion and storefront query helpers.
+
+`FulfillmentCostQuoteProvider` is the read-only preflight seam for providers
+that can price an exact set of fulfillment lines and destination. Quotes expose
+normalized item, shipping, and adjustment costs, but deliberately do not claim
+to reserve provider inventory or pricing. Spending applications refresh the
+quote immediately before authorization and bind final settlement to the
+provider's accepted cost.
 
 Follows the same shape as `@absolutejs/voice`: a host package holds the
 **agnostic logic + adapter contracts**, and provider implementations live in
@@ -53,11 +60,11 @@ The first slice is the carrier-agnostic shipping interface. Apps program against
 implements it, so a shop can plug in whatever carrier account it already uses.
 
 ```ts
-import type { ShippingProvider } from '@absolutejs/commerce';
-import { createEasyPostProvider } from '@absolutejs/commerce-easypost';
+import type { ShippingProvider } from "@absolutejs/commerce";
+import { createEasyPostProvider } from "@absolutejs/commerce-easypost";
 
 const shipping: ShippingProvider = createEasyPostProvider({
-	apiKey: process.env.EASYPOST_API_KEY!
+	apiKey: process.env.EASYPOST_API_KEY!,
 });
 
 const label = await shipping.buyCheapestLabel({ from, to, parcel });

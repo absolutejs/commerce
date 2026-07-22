@@ -3,13 +3,13 @@
 // it, while a carrier adapter only transports an already-produced parcel.
 
 export type FulfillmentStatus =
-	| 'pending'
-	| 'accepted'
-	| 'in_production'
-	| 'partially_shipped'
-	| 'shipped'
-	| 'cancelled'
-	| 'failed';
+	| "pending"
+	| "accepted"
+	| "in_production"
+	| "partially_shipped"
+	| "shipped"
+	| "cancelled"
+	| "failed";
 
 export type FulfillmentAddress = {
 	firstName: string;
@@ -76,11 +76,39 @@ export type FulfillmentValidation = {
 	errors: { lineId?: string; message: string }[];
 };
 
+export type FulfillmentCostQuote = {
+	/** Provider-calculated item production cost before shipping. */
+	itemsCents: number;
+	/** Provider-calculated shipping cost for the selected destination/method. */
+	shippingCents: number;
+	/** Provider-specific production additions such as a second decoration side. */
+	adjustmentsCents: number;
+	totalCents: number;
+	currency: string;
+	quotedAt: string;
+	/** Human-readable normalized assumptions; never put credentials here. */
+	assumptions: string[];
+};
+
+export type FulfillmentCostQuoteRequest = Omit<
+	FulfillmentOrderRequest,
+	"externalOrderId"
+>;
+
+/**
+ * Read-only pricing preflight. A quote does not reserve provider inventory or
+ * price: spending callers must refresh it immediately before authorization and
+ * still bind settlement to the provider's final accepted cost.
+ */
+export interface FulfillmentCostQuoteProvider {
+	quoteOrder(order: FulfillmentCostQuoteRequest): Promise<FulfillmentCostQuote>;
+}
+
 export type FulfillmentEvent = {
 	id?: string;
 	providerOrderId: string;
 	externalOrderId?: string;
-	type: 'accepted' | 'production' | 'shipped' | 'cancelled' | 'failed';
+	type: "accepted" | "production" | "shipped" | "cancelled" | "failed";
 	status: FulfillmentStatus;
 	tracking?: FulfillmentTracking[];
 	occurredAt?: string;
@@ -90,7 +118,7 @@ export type FulfillmentEvent = {
 export interface FulfillmentProvider {
 	readonly id: string;
 	validateOrder(
-		order: FulfillmentOrderRequest
+		order: FulfillmentOrderRequest,
 	): FulfillmentValidation | Promise<FulfillmentValidation>;
 	submitOrder(order: FulfillmentOrderRequest): Promise<FulfillmentOrder>;
 	getOrder(providerOrderId: string): Promise<FulfillmentOrder>;
@@ -105,7 +133,7 @@ export type RoutedFulfillmentOrder = FulfillmentOrderRequest & {
 
 /** Split a checkout into idempotent provider jobs without losing line data. */
 export const routeFulfillmentOrder = (
-	order: FulfillmentOrderRequest
+	order: FulfillmentOrderRequest,
 ): RoutedFulfillmentOrder[] => {
 	const byProvider = new Map<string, FulfillmentLine[]>();
 	for (const line of order.lines) {
@@ -124,28 +152,28 @@ export const routeFulfillmentOrder = (
 				? order.externalOrderId
 				: `${order.externalOrderId}-${providerId}`,
 		lines,
-		providerId
+		providerId,
 	}));
 };
 
 export const validateFulfillmentOrder = (
-	order: FulfillmentOrderRequest
+	order: FulfillmentOrderRequest,
 ): FulfillmentValidation => {
-	const errors: FulfillmentValidation['errors'] = [];
+	const errors: FulfillmentValidation["errors"] = [];
 	if (!order.externalOrderId.trim())
-		errors.push({ message: 'Order id is required' });
+		errors.push({ message: "Order id is required" });
 	if (order.lines.length === 0)
-		errors.push({ message: 'At least one fulfillment line is required' });
+		errors.push({ message: "At least one fulfillment line is required" });
 	for (const line of order.lines) {
 		if (!line.providerSku.trim())
-			errors.push({ lineId: line.id, message: 'Provider SKU is required' });
+			errors.push({ lineId: line.id, message: "Provider SKU is required" });
 		if (!Number.isInteger(line.quantity) || line.quantity < 1)
 			errors.push({
 				lineId: line.id,
-				message: 'Quantity must be a positive integer'
+				message: "Quantity must be a positive integer",
 			});
 		if (line.artwork.length === 0)
-			errors.push({ lineId: line.id, message: 'Artwork is required' });
+			errors.push({ lineId: line.id, message: "Artwork is required" });
 	}
 	const address = order.recipient;
 	if (
@@ -155,10 +183,10 @@ export const validateFulfillmentOrder = (
 			address.address1,
 			address.city,
 			address.postalCode,
-			address.country
+			address.country,
 		].every((value) => value.trim())
 	)
-		errors.push({ message: 'A complete recipient address is required' });
+		errors.push({ message: "A complete recipient address is required" });
 
 	return { errors, valid: errors.length === 0 };
 };
