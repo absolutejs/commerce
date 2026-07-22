@@ -12,7 +12,7 @@ import {
   createStorefrontCheckout,
   resolveStorefrontCart,
 } from "../core/storefront";
-import { and, asc, eq, inArray, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, lte, or, sql } from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
@@ -72,21 +72,19 @@ export type PaymentWebhookReceipt = {
   updatedAt: Date;
 };
 
-export const storefrontPaymentWebhookReceiptProjection = (
-  row: typeof commercePaymentWebhookReceipts.$inferSelect,
-): PaymentWebhookReceipt => ({
-  appliedAt: row.applied_at,
-  attemptCount: row.attempt_count,
-  eventType: row.event_type,
-  id: row.id,
-  installationId: row.installation_id,
-  lastError: row.last_error,
-  ownerKey: row.owner_key,
-  providerEventId: row.provider_event_id,
-  receivedAt: row.received_at,
-  resultStatus: row.result_status,
-  status: row.status,
-  updatedAt: row.updated_at,
+export const storefrontPaymentWebhookReceiptSelection = () => ({
+  appliedAt: commercePaymentWebhookReceipts.applied_at,
+  attemptCount: commercePaymentWebhookReceipts.attempt_count,
+  eventType: commercePaymentWebhookReceipts.event_type,
+  id: commercePaymentWebhookReceipts.id,
+  installationId: commercePaymentWebhookReceipts.installation_id,
+  lastError: commercePaymentWebhookReceipts.last_error,
+  ownerKey: commercePaymentWebhookReceipts.owner_key,
+  providerEventId: commercePaymentWebhookReceipts.provider_event_id,
+  receivedAt: commercePaymentWebhookReceipts.received_at,
+  resultStatus: commercePaymentWebhookReceipts.result_status,
+  status: commercePaymentWebhookReceipts.status,
+  updatedAt: commercePaymentWebhookReceipts.updated_at,
 });
 
 export class StorefrontPaymentError extends Error {
@@ -611,9 +609,10 @@ export const createStorefrontPaymentService = (options: {
     },
     listWebhookReceipts: async (
       ownerKey?: string,
+      limit = 100,
     ): Promise<PaymentWebhookReceipt[]> => {
       const rows = await options.db
-        .select()
+        .select(storefrontPaymentWebhookReceiptSelection())
         .from(commercePaymentWebhookReceipts)
         .where(
           ownerKey
@@ -623,9 +622,33 @@ export const createStorefrontPaymentService = (options: {
         .orderBy(
           asc(commercePaymentWebhookReceipts.status),
           asc(commercePaymentWebhookReceipts.received_at),
-        );
+        )
+        .limit(Math.max(1, Math.min(limit, 200)));
 
-      return rows.map(storefrontPaymentWebhookReceiptProjection);
+      return rows;
+    },
+    paymentWebhookReceiptTotals: async (ownerKey?: string) => {
+      const rows = await options.db
+        .select({
+          count: count(),
+          status: commercePaymentWebhookReceipts.status,
+        })
+        .from(commercePaymentWebhookReceipts)
+        .where(
+          ownerKey
+            ? eq(commercePaymentWebhookReceipts.owner_key, ownerKey)
+            : undefined,
+        )
+        .groupBy(commercePaymentWebhookReceipts.status);
+
+      return rows.reduce<Record<string, number> & { total: number }>(
+        (totals, row) => ({
+          ...totals,
+          [row.status]: row.count,
+          total: totals.total + row.count,
+        }),
+        { total: 0 },
+      );
     },
     paymentInstallationPosture: async (
       ownerKey?: string,

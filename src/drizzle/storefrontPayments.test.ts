@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   storefrontCheckoutRequestDigest,
-  storefrontPaymentWebhookReceiptProjection,
+  storefrontPaymentWebhookReceiptSelection,
 } from "./storefrontPayments";
 
 describe("storefrontCheckoutRequestDigest", () => {
@@ -28,46 +28,10 @@ describe("storefrontCheckoutRequestDigest", () => {
   });
 });
 
-describe("storefrontPaymentWebhookReceiptProjection", () => {
-  test("omits the normalized event from operator posture", () => {
-    const now = new Date();
-    const projection = storefrontPaymentWebhookReceiptProjection({
-      applied_at: null,
-      attempt_count: 1,
-      event: {
-        checkout: {
-          id: "provider-event",
-          isComplete: false,
-          isFailed: false,
-          session: {
-            amountTotalCents: 100,
-            currency: "USD",
-            customerEmail: "private@example.invalid",
-            customerName: "Private customer",
-            id: "session",
-            lineItems: [],
-            metadata: {},
-            paymentStatus: "unpaid",
-            shippingAddress: null,
-            status: "open",
-          },
-          type: "checkout.session.created",
-        },
-        kind: "checkout",
-      },
-      event_type: "checkout.session.created",
-      id: "receipt",
-      installation_id: "installation",
-      last_error: null,
-      owner_key: "tenant",
-      provider_event_id: "provider-event",
-      received_at: now,
-      result_status: null,
-      status: "received",
-      updated_at: now,
-    });
-
-    expect(projection).not.toHaveProperty("event");
-    expect(JSON.stringify(projection)).not.toContain("private@example.invalid");
+describe("storefrontPaymentWebhookReceiptSelection", () => {
+  test("never selects the normalized event for operator posture", () => {
+    expect(storefrontPaymentWebhookReceiptSelection()).not.toHaveProperty(
+      "event",
+    );
   });
 });

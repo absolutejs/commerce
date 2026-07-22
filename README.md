@@ -75,10 +75,11 @@ checking the tenant, installation, session, amount, and currency.
 Verified webhook ingress is retained separately from its applied payment event.
 The receipt stores the normalized provider event, never the raw signed body or
 signature, and tracks processing, failure, quarantine, and application attempts.
-`listWebhookReceipts()` returns a privacy-safe projection without event or
-customer fields; `retryWebhookReceipt()` replays only the already-verified
-normalized event through the same tenant and installation checks. Invalid
-signatures remain untrusted and are never persisted.
+`listWebhookReceipts()` selects a bounded privacy-safe projection without even
+loading event or customer fields, while `paymentWebhookReceiptTotals()`
+aggregates the complete ledger in SQL. `retryWebhookReceipt()` replays only the
+already-verified normalized event through the same tenant and installation
+checks. Invalid signatures remain untrusted and are never persisted.
 
 `createStorefrontFulfillmentService()` owns the separately gated provider-effect
 boundary after payment. It leases pending jobs with compare-and-set ownership,
