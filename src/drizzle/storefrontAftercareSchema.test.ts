@@ -3,6 +3,7 @@ import {
   commerceStorefrontCaseAttachments,
   commerceStorefrontAftercarePolicies,
   commerceStorefrontCaseEvidenceSubmissions,
+  commerceStorefrontCaseEscalations,
   commerceStorefrontCaseEvents,
   commerceStorefrontCaseMessages,
   commerceStorefrontCases,
@@ -35,6 +36,14 @@ describe("storefront aftercare timestamps", () => {
       commerceStorefrontCaseEvidenceSubmissions.next_attempt_at,
       commerceStorefrontCaseEvidenceSubmissions.reconciled_at,
       commerceStorefrontCaseEvidenceSubmissions.submitted_at,
+      commerceStorefrontCaseEscalations.created_at,
+      commerceStorefrontCaseEscalations.updated_at,
+      commerceStorefrontCaseEscalations.acknowledged_at,
+      commerceStorefrontCaseEscalations.due_at,
+      commerceStorefrontCaseEscalations.lease_expires_at,
+      commerceStorefrontCaseEscalations.next_promotion_at,
+      commerceStorefrontCaseEscalations.promoted_at,
+      commerceStorefrontCaseEscalations.resolved_at,
     ];
 
     expect(timestampColumns.map((column) => column.getSQLType())).toEqual(
@@ -46,17 +55,26 @@ describe("storefront aftercare timestamps", () => {
     expect(
       normalizeStorefrontDisputeDeadlinePolicy({
         alertsEnabled: true,
+        escalationAfterMinutes: 60,
+        escalationEnabled: true,
+        notificationAudiences: ["owner", "admin"],
         overdueEnabled: true,
         warningHours: [24, 72, 24],
       }),
     ).toEqual({
       alertsEnabled: true,
+      escalationAfterMinutes: 60,
+      escalationEnabled: true,
+      notificationAudiences: ["owner", "admin"],
       overdueEnabled: true,
       warningHours: [72, 24],
     });
     expect(() =>
       normalizeStorefrontDisputeDeadlinePolicy({
         alertsEnabled: true,
+        escalationAfterMinutes: 60,
+        escalationEnabled: true,
+        notificationAudiences: ["owner", "admin"],
         overdueEnabled: true,
         warningHours: [0],
       }),

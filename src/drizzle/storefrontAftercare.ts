@@ -10,6 +10,7 @@ import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
   commerceStorefrontCaseEvents,
+  commerceStorefrontCaseEscalations,
   commerceStorefrontCaseMessages,
   commerceStorefrontCases,
   commerceStorefrontOrders,
@@ -47,6 +48,9 @@ export class StorefrontAftercareError extends Error {
       | "evidence_not_retryable"
       | "evidence_not_supported"
       | "deadline_policy_invalid"
+      | "escalation_conflict"
+      | "escalation_disabled"
+      | "escalation_not_found"
       | "order_access_denied"
       | "order_not_found",
   ) {
@@ -662,6 +666,26 @@ export const createStorefrontAftercareService = (options: {
           ownerKey: updated.owner_key,
           payload: { from: current.status, to: updated.status },
         });
+        if (terminalStatuses.includes(input.status))
+          await transaction
+            .update(commerceStorefrontCaseEscalations)
+            .set({
+              lease_expires_at: null,
+              next_promotion_at: null,
+              resolved_at: timestamp,
+              status: "resolved",
+              updated_at: timestamp,
+              worker_id: null,
+            })
+            .where(
+              and(
+                eq(commerceStorefrontCaseEscalations.case_id, updated.id),
+                inArray(commerceStorefrontCaseEscalations.status, [
+                  "open",
+                  "promoted",
+                ]),
+              ),
+            );
 
         return updated;
       });
@@ -749,6 +773,26 @@ export const recordStorefrontDispute = async (
       providerStatus: input.dispute.status,
     },
   });
+  if (terminalStatuses.includes(status))
+    await db
+      .update(commerceStorefrontCaseEscalations)
+      .set({
+        lease_expires_at: null,
+        next_promotion_at: null,
+        resolved_at: new Date(),
+        status: "resolved",
+        updated_at: new Date(),
+        worker_id: null,
+      })
+      .where(
+        and(
+          eq(commerceStorefrontCaseEscalations.case_id, result.id),
+          inArray(commerceStorefrontCaseEscalations.status, [
+            "open",
+            "promoted",
+          ]),
+        ),
+      );
 
   return result;
 };

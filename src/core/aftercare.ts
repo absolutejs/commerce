@@ -47,9 +47,17 @@ export type StorefrontCaseEvidenceStatus =
 
 export type StorefrontDisputeDeadlinePolicy = {
   alertsEnabled: boolean;
+  escalationAfterMinutes: number;
+  escalationEnabled: boolean;
+  notificationAudiences: StorefrontDisputeNotificationAudience[];
   overdueEnabled: boolean;
   warningHours: number[];
 };
+
+export type StorefrontDisputeNotificationAudience = "admin" | "owner";
+
+export type StorefrontDisputeEscalationStatus =
+  "acknowledged" | "open" | "promoted" | "resolved";
 
 export type StorefrontCaseEvidenceText = Partial<{
   accessActivityLog: string;

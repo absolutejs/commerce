@@ -26,6 +26,7 @@ import {
   commerceCheckoutIntents,
   commerceStorefrontAftercarePolicies,
   commerceStorefrontCaseAttachments,
+  commerceStorefrontCaseEscalations,
   commerceStorefrontCaseEvidenceSubmissions,
   commerceStorefrontCaseEvents,
   commerceStorefrontCases,
@@ -45,6 +46,9 @@ const MAX_DEADLINE_WARNINGS = 6;
 const DEFAULT_DEADLINE_WINDOW_MS = MAX_DEADLINE_WARNING_HOURS * HOUR_MS;
 const defaultDeadlinePolicy: StorefrontDisputeDeadlinePolicy = {
   alertsEnabled: true,
+  escalationAfterMinutes: 60,
+  escalationEnabled: true,
+  notificationAudiences: ["owner", "admin"],
   overdueEnabled: true,
   warningHours: [72, 24],
 };
@@ -84,7 +88,19 @@ export const normalizeStorefrontDisputeDeadlinePolicy = (
   )
     throw new StorefrontAftercareError("deadline_policy_invalid");
 
-  return { ...policy, warningHours };
+  const notificationAudiences = [...new Set(policy.notificationAudiences)];
+  if (
+    !Number.isSafeInteger(policy.escalationAfterMinutes) ||
+    policy.escalationAfterMinutes < 1 ||
+    policy.escalationAfterMinutes > 10_080 ||
+    notificationAudiences.length === 0 ||
+    notificationAudiences.some(
+      (audience) => audience !== "admin" && audience !== "owner",
+    )
+  )
+    throw new StorefrontAftercareError("deadline_policy_invalid");
+
+  return { ...policy, notificationAudiences, warningHours };
 };
 
 const canonical = (value: unknown): string => {
@@ -140,7 +156,10 @@ export const createStorefrontAftercareEvidenceService = (options: {
       .where(eq(commerceStorefrontAftercarePolicies.owner_key, ownerKey))
       .limit(1);
 
-    return record?.policy ?? defaultDeadlinePolicy;
+    return normalizeStorefrontDisputeDeadlinePolicy({
+      ...defaultDeadlinePolicy,
+      ...record?.policy,
+    });
   };
 
   const caseFor = async (ownerKey: string, caseId: string) => {
@@ -816,17 +835,36 @@ export const createStorefrontAftercareEvidenceService = (options: {
             )
             .limit(1);
           if (existing) continue;
-          await emitStorefrontCaseEvent(options.db, {
-            caseId: caseEntry.id,
-            eventKey,
-            kind: "evidence_deadline",
-            orderId: caseEntry.order_id,
-            ownerKey: caseEntry.owner_key,
-            payload: {
-              bucket,
-              dueAt: caseEntry.due_at!.toISOString(),
-              providerStatus: caseEntry.provider_status,
-            },
+          await options.db.transaction(async (transaction) => {
+            await emitStorefrontCaseEvent(transaction, {
+              caseId: caseEntry.id,
+              eventKey,
+              kind: "evidence_deadline",
+              orderId: caseEntry.order_id,
+              ownerKey: caseEntry.owner_key,
+              payload: {
+                bucket,
+                dueAt: caseEntry.due_at!.toISOString(),
+                notificationAudiences: policy.notificationAudiences,
+                providerStatus: caseEntry.provider_status,
+              },
+            });
+            if (policy.escalationEnabled)
+              await transaction
+                .insert(commerceStorefrontCaseEscalations)
+                .values({
+                  bucket,
+                  case_id: caseEntry.id,
+                  due_at: caseEntry.due_at!,
+                  event_key: eventKey,
+                  next_promotion_at: new Date(
+                    timestamp.getTime() +
+                      policy.escalationAfterMinutes * 60 * 1_000,
+                  ),
+                  notification_audiences: policy.notificationAudiences,
+                  owner_key: caseEntry.owner_key,
+                })
+                .onConflictDoNothing();
           });
           results.push({ bucket, caseId: caseEntry.id });
           if (results.length >= limit) break;

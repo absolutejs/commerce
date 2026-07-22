@@ -114,9 +114,16 @@ retains non-secret field/purpose mismatch diagnostics without copying customer
 evidence values into operational metadata. Tenant-owned deadline policies
 control whether alerts run, whether overdue alerts are emitted, and up to six
 unique warning thresholds from 1 to 720 hours. The service emits idempotent
-deadline events through the case event substrate. Provider adapters implement `reconcileDisputeEvidence` and
-`submitDisputeEvidence`; the host independently gates reconciliation, staging,
-and final payment-network submission.
+deadline events through the case event substrate and records durable,
+audience-routed escalations with bounded acknowledgement deadlines.
+`createStorefrontAftercareEscalationService()` adds optimistic acknowledgement
+and assignment, leased and retryable host-supplied incident promotion, terminal
+resolution, and privacy-safe SLA/outcome analytics. Evidence effectiveness
+counts whether a staged/submitted bundle existed; it never returns evidence
+values, file identifiers, or customer content. Provider adapters implement
+`reconcileDisputeEvidence` and `submitDisputeEvidence`; the host independently
+gates reconciliation, staging, final payment-network submission, notification
+delivery, and incident promotion.
 
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.

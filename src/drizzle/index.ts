@@ -48,6 +48,7 @@ import type {
   StorefrontCaseEvidenceText,
   StorefrontCaseResolution,
   StorefrontDisputeDeadlinePolicy,
+  StorefrontDisputeEscalationStatus,
 } from "../core/aftercare";
 
 // Drizzle's native jsonb codec and Bun SQL do not yet agree on object
@@ -808,6 +809,9 @@ export const commerceStorefrontAftercarePolicies = pgTable(
       .notNull()
       .default({
         alertsEnabled: true,
+        escalationAfterMinutes: 60,
+        escalationEnabled: true,
+        notificationAudiences: ["owner", "admin"],
         overdueEnabled: true,
         warningHours: [72, 24],
       }),
@@ -816,6 +820,57 @@ export const commerceStorefrontAftercarePolicies = pgTable(
       .notNull()
       .defaultNow(),
   },
+);
+
+export const commerceStorefrontCaseEscalations = pgTable(
+  "commerce_storefront_case_escalations",
+  {
+    acknowledged_at: timestamp({ precision: 3, withTimezone: true }),
+    acknowledged_by: varchar({ length: 200 }),
+    assigned_to: varchar({ length: 200 }),
+    bucket: varchar({ length: 40 }).notNull(),
+    case_id: uuid().notNull(),
+    created_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    due_at: timestamp({ precision: 3, withTimezone: true }).notNull(),
+    event_key: varchar({ length: 220 }).notNull(),
+    id: uuid().defaultRandom().primaryKey(),
+    incident_reference: varchar({ length: 255 }),
+    last_error: text(),
+    lease_expires_at: timestamp({ precision: 3, withTimezone: true }),
+    next_promotion_at: timestamp({ precision: 3, withTimezone: true }),
+    notification_audiences: portableJsonb()
+      .$type<Array<"admin" | "owner">>()
+      .notNull()
+      .default(["owner", "admin"]),
+    owner_key: varchar({ length: 160 }).notNull(),
+    promotion_attempts: integer().notNull().default(0),
+    promoted_at: timestamp({ precision: 3, withTimezone: true }),
+    resolved_at: timestamp({ precision: 3, withTimezone: true }),
+    status: varchar({ length: 30 })
+      .$type<StorefrontDisputeEscalationStatus>()
+      .notNull()
+      .default("open"),
+    updated_at: timestamp({ precision: 3, withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    worker_id: varchar({ length: 160 }),
+  },
+  (table) => [
+    uniqueIndex("commerce_storefront_case_escalations_event_idx").on(
+      table.case_id,
+      table.event_key,
+    ),
+    index("commerce_storefront_case_escalations_owner_status_idx").on(
+      table.owner_key,
+      table.status,
+    ),
+    index("commerce_storefront_case_escalations_promotion_idx").on(
+      table.status,
+      table.next_promotion_at,
+    ),
+  ],
 );
 
 export const commerceStorefrontCaseEvents = pgTable(
@@ -1292,6 +1347,7 @@ export const commerceDrizzleSchema = {
   subscribers: commerceSubscribers,
   storefrontFulfillmentJobs: commerceStorefrontFulfillmentJobs,
   storefrontCaseAttachments: commerceStorefrontCaseAttachments,
+  storefrontCaseEscalations: commerceStorefrontCaseEscalations,
   storefrontAftercarePolicies: commerceStorefrontAftercarePolicies,
   storefrontCaseEvidenceSubmissions: commerceStorefrontCaseEvidenceSubmissions,
   storefrontCaseEvents: commerceStorefrontCaseEvents,
@@ -1308,6 +1364,7 @@ export * from "./storefrontMerchandising";
 export * from "./storefrontPayments";
 export * from "./storefrontFulfillment";
 export * from "./storefrontAftercareEvidence";
+export * from "./storefrontAftercareEscalations";
 export * from "./storefrontOrders";
 export * from "./storefrontAftercare";
 export * from "./catalogSync";
