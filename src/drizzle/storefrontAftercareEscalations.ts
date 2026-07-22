@@ -94,7 +94,7 @@ export const createStorefrontAftercareEscalationService = (options: {
     return entry;
   };
 
-  const claim = async (workerId: string) => {
+  const claim = async (workerId: string, ownerKey?: string) => {
     const timestamp = now();
     const candidates = await options.db
       .select()
@@ -110,6 +110,9 @@ export const createStorefrontAftercareEscalationService = (options: {
             isNull(commerceStorefrontCaseEscalations.lease_expires_at),
             lte(commerceStorefrontCaseEscalations.lease_expires_at, timestamp),
           ),
+          ownerKey
+            ? eq(commerceStorefrontCaseEscalations.owner_key, ownerKey)
+            : undefined,
         ),
       )
       .orderBy(asc(commerceStorefrontCaseEscalations.next_promotion_at))
@@ -293,6 +296,7 @@ export const createStorefrontAftercareEscalationService = (options: {
     runPromotionCycle: async (
       workerId: string,
       limit = DEFAULT_CYCLE_LIMIT,
+      ownerKey?: string,
     ) => {
       if (!enabled) throw new StorefrontAftercareError("escalation_disabled");
       const results: Array<{
@@ -300,7 +304,7 @@ export const createStorefrontAftercareEscalationService = (options: {
         status: "promoted" | "retry";
       }> = [];
       for (let index = 0; index < limit; index += 1) {
-        const escalation = await claim(workerId);
+        const escalation = await claim(workerId, ownerKey);
         if (!escalation) break;
         try {
           const incident = await options.promoteIncident({
