@@ -352,7 +352,17 @@ export const createStorefrontAftercareEvidenceService = (options: {
 
       return ids.length
         ? options.db
-            .select()
+            .select({
+              byte_count: commerceStorefrontCaseAttachments.byte_count,
+              case_id: commerceStorefrontCaseAttachments.case_id,
+              content_type: commerceStorefrontCaseAttachments.content_type,
+              created_at: commerceStorefrontCaseAttachments.created_at,
+              id: commerceStorefrontCaseAttachments.id,
+              label: commerceStorefrontCaseAttachments.label,
+              purpose: commerceStorefrontCaseAttachments.purpose,
+              scanned_at: commerceStorefrontCaseAttachments.scanned_at,
+              status: commerceStorefrontCaseAttachments.status,
+            })
             .from(commerceStorefrontCaseAttachments)
             .where(
               and(
