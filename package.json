@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/commerce",
-  "version": "0.34.0-beta.0",
+  "version": "0.34.1-beta.0",
   "description": "Provider-agnostic commerce primitives (cart, orders, fulfillment, shipping) for AbsoluteJS",
   "repository": {
     "type": "git",
@@ -59,7 +59,7 @@
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
-    "drizzle-orm": ">=0.30.0",
+    "drizzle-orm": ">=1.0.0-rc.4",
     "react": ">=18.0.0",
     "three": "",
     "@react-three/drei": ">=9.0.0",
@@ -88,7 +88,7 @@
     "@types/bun": "1.3.9",
     "@types/react": "^19.0.0",
     "@types/three": "^0.185.0",
-    "drizzle-orm": "^0.44.0",
+    "drizzle-orm": "1.0.0-rc.4",
     "prettier": "^3.9.6",
     "react": "^19.0.0",
     "typescript": "^5.9.3"

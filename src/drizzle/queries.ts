@@ -3,7 +3,7 @@
 // the host app already has. drizzle-orm is a peer dependency.
 
 import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
-import type { PgDatabase } from "drizzle-orm/pg-core";
+import type { PgAsyncDatabase } from "drizzle-orm/pg-core";
 import {
   commerceAbandonedCarts,
   commerceCompanies,
@@ -27,7 +27,7 @@ import {
 } from "./index";
 
 // Any Postgres Drizzle database (NeonHttpDatabase, NodePgDatabase, …).
-export type CommerceDb = PgDatabase<any, any, any>;
+export type CommerceDb = PgAsyncDatabase<any, any>;
 
 export type Review = typeof commerceReviews.$inferSelect;
 export type NewReview = typeof commerceReviews.$inferInsert;
