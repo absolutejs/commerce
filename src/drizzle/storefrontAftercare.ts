@@ -397,6 +397,8 @@ export const createStorefrontAftercareService = (options: {
         return message;
       });
     },
+    getOwnerCase: (ownerKey: string, caseId: string) =>
+      caseFor(ownerKey, caseId),
     listCustomer: async (
       ownerKey: string,
       access: { accessToken: string; checkoutIntentId: string },
