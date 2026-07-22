@@ -754,6 +754,7 @@ export const commerceStorefrontCaseEvidenceSubmissions = pgTable(
       .notNull()
       .default({}),
     provider_status: varchar({ length: 80 }),
+    reconciled_at: timestamp({ precision: 3, withTimezone: true }),
     submission_count: integer(),
     submit: boolean().notNull().default(false),
     status: varchar({ length: 30 }).notNull().default("pending"),

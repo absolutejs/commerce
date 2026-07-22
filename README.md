@@ -107,9 +107,13 @@ inspection, and remain hidden from customers unless clean. Infected bytes stay
 quarantined, scanner failures fail closed, and terminal-case retention cleanup
 deletes through a host-supplied blob boundary. Dispute evidence jobs accept
 only clean case-owned attachments, preserve stable provider idempotency, and
-quarantine ambiguous submission outcomes for explicit retry. Provider adapters
-implement `submitDisputeEvidence`; the host decides whether a job only stages
-evidence or submits it to the payment network.
+quarantine ambiguous submission outcomes. A retry is prohibited until a leased
+provider reconciliation confirms the intended effect was not applied; applied
+effects converge on the retained staged/submitted record. The same service
+emits idempotent 72-hour, 24-hour, and overdue deadline events through the case
+event substrate. Provider adapters implement `reconcileDisputeEvidence` and
+`submitDisputeEvidence`; the host independently gates reconciliation, staging,
+and final payment-network submission.
 
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.

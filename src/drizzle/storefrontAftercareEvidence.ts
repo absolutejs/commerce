@@ -5,9 +5,21 @@ import type {
 } from "../core/aftercare";
 import type {
   PaymentDisputeEvidenceFile,
+  PaymentDisputeEvidenceReconciliation,
   PaymentDisputeEvidenceResult,
 } from "../core/payment";
-import { and, asc, desc, eq, inArray, isNull, lte, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  notInArray,
+  or,
+} from "drizzle-orm";
 import type { CommerceDb } from "./queries";
 import {
   commerceCheckoutIntents,
@@ -24,6 +36,8 @@ import { storefrontOrderAccessTokenHash } from "./storefrontOrders";
 
 const DEFAULT_CYCLE_LIMIT = 10;
 const DEFAULT_LEASE_MS = 60_000;
+const DEFAULT_DEADLINE_WINDOW_MS = 72 * 60 * 60 * 1_000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
 const terminalStatuses: StorefrontCaseStatus[] = [
   "closed",
   "rejected",
@@ -57,6 +71,8 @@ const canonical = (value: unknown): string => {
 export const createStorefrontAftercareEvidenceService = (options: {
   attachmentsEnabled?: boolean;
   db: CommerceDb;
+  deadlinesEnabled?: boolean;
+  deadlineWindowMs?: number;
   evidenceEnabled?: boolean;
   inspectAttachment: (
     attachment: StorefrontCaseAttachmentRecord,
@@ -66,6 +82,11 @@ export const createStorefrontAftercareEvidenceService = (options: {
   removeAttachment: (
     attachment: StorefrontCaseAttachmentRecord,
   ) => Promise<void>;
+  reconcileEvidence?: (input: {
+    attachments: StorefrontCaseAttachmentRecord[];
+    caseEntry: typeof commerceStorefrontCases.$inferSelect;
+    submission: StorefrontCaseEvidenceSubmission;
+  }) => Promise<PaymentDisputeEvidenceReconciliation>;
   submitEvidence: (input: {
     attachments: StorefrontCaseAttachmentRecord[];
     caseEntry: typeof commerceStorefrontCases.$inferSelect;
@@ -74,6 +95,9 @@ export const createStorefrontAftercareEvidenceService = (options: {
   }) => Promise<PaymentDisputeEvidenceResult>;
 }) => {
   const attachmentsEnabled = options.attachmentsEnabled ?? false;
+  const deadlinesEnabled = options.deadlinesEnabled ?? false;
+  const deadlineWindowMs =
+    options.deadlineWindowMs ?? DEFAULT_DEADLINE_WINDOW_MS;
   const evidenceEnabled = options.evidenceEnabled ?? false;
   const leaseMs = options.leaseMs ?? DEFAULT_LEASE_MS;
   const now = options.now ?? (() => new Date());
@@ -295,6 +319,63 @@ export const createStorefrontAftercareEvidenceService = (options: {
             eq(
               commerceStorefrontCaseEvidenceSubmissions.status,
               candidate.status,
+            ),
+          ),
+        )
+        .returning();
+      if (claimed) return claimed;
+    }
+
+    return null;
+  };
+
+  const claimReconciliation = async (workerId: string) => {
+    const timestamp = now();
+    await options.db
+      .update(commerceStorefrontCaseEvidenceSubmissions)
+      .set({
+        last_error: "Evidence reconciliation lease expired",
+        lease_expires_at: null,
+        reconciled_at: null,
+        status: "quarantined",
+        updated_at: timestamp,
+        worker_id: null,
+      })
+      .where(
+        and(
+          eq(commerceStorefrontCaseEvidenceSubmissions.status, "reconciling"),
+          lte(
+            commerceStorefrontCaseEvidenceSubmissions.lease_expires_at,
+            timestamp,
+          ),
+        ),
+      );
+    const candidates = await options.db
+      .select()
+      .from(commerceStorefrontCaseEvidenceSubmissions)
+      .where(
+        eq(
+          commerceStorefrontCaseEvidenceSubmissions.status,
+          "reconciliation_pending",
+        ),
+      )
+      .orderBy(asc(commerceStorefrontCaseEvidenceSubmissions.updated_at))
+      .limit(DEFAULT_CYCLE_LIMIT);
+    for (const candidate of candidates) {
+      const [claimed] = await options.db
+        .update(commerceStorefrontCaseEvidenceSubmissions)
+        .set({
+          lease_expires_at: new Date(timestamp.getTime() + leaseMs),
+          status: "reconciling",
+          updated_at: timestamp,
+          worker_id: workerId,
+        })
+        .where(
+          and(
+            eq(commerceStorefrontCaseEvidenceSubmissions.id, candidate.id),
+            eq(
+              commerceStorefrontCaseEvidenceSubmissions.status,
+              "reconciliation_pending",
             ),
           ),
         )
@@ -540,16 +621,23 @@ export const createStorefrontAftercareEvidenceService = (options: {
 
       return retried!;
     },
-    retryEvidence: async (ownerKey: string, submissionId: string) => {
+    queueEvidenceReconciliation: async (
+      ownerKey: string,
+      submissionId: string,
+    ) => {
       if (!evidenceEnabled)
         throw new StorefrontAftercareError("evidence_disabled");
-      const [retried] = await options.db
+      if (!options.reconcileEvidence)
+        throw new StorefrontAftercareError("evidence_not_supported");
+      const [queued] = await options.db
         .update(commerceStorefrontCaseEvidenceSubmissions)
         .set({
           last_error: null,
-          next_attempt_at: now(),
-          status: "retry",
+          lease_expires_at: null,
+          reconciled_at: null,
+          status: "reconciliation_pending",
           updated_at: now(),
+          worker_id: null,
         })
         .where(
           and(
@@ -559,10 +647,214 @@ export const createStorefrontAftercareEvidenceService = (options: {
           ),
         )
         .returning();
+      if (!queued) throw new StorefrontAftercareError("evidence_not_retryable");
+
+      return queued;
+    },
+    retryEvidence: async (ownerKey: string, submissionId: string) => {
+      if (!evidenceEnabled)
+        throw new StorefrontAftercareError("evidence_disabled");
+      const [submission] = await options.db
+        .select()
+        .from(commerceStorefrontCaseEvidenceSubmissions)
+        .where(
+          and(
+            eq(commerceStorefrontCaseEvidenceSubmissions.owner_key, ownerKey),
+            eq(commerceStorefrontCaseEvidenceSubmissions.id, submissionId),
+          ),
+        )
+        .limit(1);
+      if (!submission) throw new StorefrontAftercareError("evidence_not_found");
+      if (submission.status !== "quarantined")
+        throw new StorefrontAftercareError("evidence_not_retryable");
+      if (!submission.reconciled_at)
+        throw new StorefrontAftercareError("evidence_reconciliation_required");
+      const [retried] = await options.db
+        .update(commerceStorefrontCaseEvidenceSubmissions)
+        .set({
+          last_error: null,
+          next_attempt_at: now(),
+          reconciled_at: null,
+          status: "retry",
+          updated_at: now(),
+        })
+        .where(
+          and(
+            eq(commerceStorefrontCaseEvidenceSubmissions.owner_key, ownerKey),
+            eq(commerceStorefrontCaseEvidenceSubmissions.id, submissionId),
+            eq(commerceStorefrontCaseEvidenceSubmissions.status, "quarantined"),
+            isNotNull(commerceStorefrontCaseEvidenceSubmissions.reconciled_at),
+          ),
+        )
+        .returning();
       if (!retried)
         throw new StorefrontAftercareError("evidence_not_retryable");
 
       return retried;
+    },
+    runDeadlineCycle: async () => {
+      if (!deadlinesEnabled)
+        throw new StorefrontAftercareError("aftercare_disabled");
+      const timestamp = now();
+      const cases = await options.db
+        .select()
+        .from(commerceStorefrontCases)
+        .where(
+          and(
+            eq(commerceStorefrontCases.kind, "dispute"),
+            isNotNull(commerceStorefrontCases.due_at),
+            lte(
+              commerceStorefrontCases.due_at,
+              new Date(timestamp.getTime() + deadlineWindowMs),
+            ),
+            notInArray(commerceStorefrontCases.status, terminalStatuses),
+          ),
+        )
+        .orderBy(asc(commerceStorefrontCases.due_at))
+        .limit(DEFAULT_CYCLE_LIMIT);
+      const results: Array<{
+        bucket: "24h" | "72h" | "overdue";
+        caseId: string;
+      }> = [];
+      for (const caseEntry of cases) {
+        const remaining = caseEntry.due_at!.getTime() - timestamp.getTime();
+        const bucket =
+          remaining <= 0 ? "overdue" : remaining <= ONE_DAY_MS ? "24h" : "72h";
+        await emitStorefrontCaseEvent(options.db, {
+          caseId: caseEntry.id,
+          eventKey: `evidence-deadline:${caseEntry.due_at!.toISOString()}:${bucket}`,
+          kind: "evidence_deadline",
+          orderId: caseEntry.order_id,
+          ownerKey: caseEntry.owner_key,
+          payload: {
+            bucket,
+            dueAt: caseEntry.due_at!.toISOString(),
+            providerStatus: caseEntry.provider_status,
+          },
+        });
+        results.push({ bucket, caseId: caseEntry.id });
+      }
+
+      return results;
+    },
+    runReconciliationCycle: async (
+      workerId: string,
+      limit = DEFAULT_CYCLE_LIMIT,
+    ) => {
+      if (!evidenceEnabled)
+        throw new StorefrontAftercareError("evidence_disabled");
+      if (!options.reconcileEvidence)
+        throw new StorefrontAftercareError("evidence_not_supported");
+      const results: Array<{ status: string; submissionId: string }> = [];
+      for (let index = 0; index < limit; index += 1) {
+        const submission = await claimReconciliation(workerId);
+        if (!submission) break;
+        const caseEntry = await caseFor(
+          submission.owner_key,
+          submission.case_id,
+        );
+        const attachments = submission.attachment_ids.length
+          ? await options.db
+              .select()
+              .from(commerceStorefrontCaseAttachments)
+              .where(
+                and(
+                  eq(
+                    commerceStorefrontCaseAttachments.owner_key,
+                    submission.owner_key,
+                  ),
+                  eq(
+                    commerceStorefrontCaseAttachments.case_id,
+                    submission.case_id,
+                  ),
+                  inArray(
+                    commerceStorefrontCaseAttachments.id,
+                    submission.attachment_ids,
+                  ),
+                ),
+              )
+          : [];
+        try {
+          const result = await options.reconcileEvidence({
+            attachments,
+            caseEntry,
+            submission,
+          });
+          if (result.applied) {
+            const status = result.submitted ? "submitted" : "staged";
+            await options.db
+              .update(commerceStorefrontCaseEvidenceSubmissions)
+              .set({
+                last_error: null,
+                lease_expires_at: null,
+                provider_file_ids: result.providerFileIds,
+                provider_status: result.providerStatus,
+                reconciled_at: now(),
+                status,
+                submission_count: result.submissionCount,
+                submitted_at: now(),
+                updated_at: now(),
+                worker_id: null,
+              })
+              .where(
+                eq(commerceStorefrontCaseEvidenceSubmissions.id, submission.id),
+              );
+            await emitStorefrontCaseEvent(options.db, {
+              caseId: caseEntry.id,
+              eventKey: `evidence-reconciled:${submission.id}`,
+              kind: "evidence_reconciled",
+              orderId: caseEntry.order_id,
+              ownerKey: caseEntry.owner_key,
+              payload: { status },
+            });
+            results.push({ status, submissionId: submission.id });
+          } else {
+            await options.db
+              .update(commerceStorefrontCaseEvidenceSubmissions)
+              .set({
+                last_error:
+                  "Provider reconciliation confirmed the evidence effect was not applied",
+                lease_expires_at: null,
+                provider_status: result.providerStatus,
+                reconciled_at: now(),
+                status: "quarantined",
+                submission_count: result.submissionCount,
+                updated_at: now(),
+                worker_id: null,
+              })
+              .where(
+                eq(commerceStorefrontCaseEvidenceSubmissions.id, submission.id),
+              );
+            results.push({
+              status: "not_applied",
+              submissionId: submission.id,
+            });
+          }
+        } catch (error) {
+          await options.db
+            .update(commerceStorefrontCaseEvidenceSubmissions)
+            .set({
+              last_error:
+                error instanceof Error
+                  ? error.message
+                  : "Evidence reconciliation failed",
+              lease_expires_at: null,
+              reconciled_at: null,
+              status: "quarantined",
+              updated_at: now(),
+              worker_id: null,
+            })
+            .where(
+              eq(commerceStorefrontCaseEvidenceSubmissions.id, submission.id),
+            );
+          results.push({
+            status: "quarantined",
+            submissionId: submission.id,
+          });
+        }
+      }
+
+      return results;
     },
     runEvidenceCycle: async (workerId: string, limit = DEFAULT_CYCLE_LIMIT) => {
       if (!evidenceEnabled)
@@ -655,6 +947,7 @@ export const createStorefrontAftercareEvidenceService = (options: {
                   ? error.message
                   : "Evidence submission failed with unknown outcome",
               lease_expires_at: null,
+              reconciled_at: null,
               status: "quarantined",
               updated_at: now(),
               worker_id: null,

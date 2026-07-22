@@ -43,6 +43,7 @@ export class StorefrontAftercareError extends Error {
       | "evidence_disabled"
       | "evidence_identity_conflict"
       | "evidence_not_found"
+      | "evidence_reconciliation_required"
       | "evidence_not_retryable"
       | "evidence_not_supported"
       | "order_access_denied"

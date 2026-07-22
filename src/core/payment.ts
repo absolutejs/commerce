@@ -123,6 +123,11 @@ export type PaymentDisputeEvidenceResult = {
   submitted: boolean;
 };
 
+export type PaymentDisputeEvidenceReconciliation =
+  PaymentDisputeEvidenceResult & {
+    applied: boolean;
+  };
+
 export type PaymentWebhookEvent =
   | { checkout: WebhookEvent; kind: "checkout" }
   | {
@@ -143,6 +148,13 @@ export type PaymentProvider = {
     idempotencyKey: string,
   ): Promise<PaymentRefund>;
   retrieveRefund(providerRefundId: string): Promise<PaymentRefund>;
+  /** Read provider state and determine whether an ambiguous evidence effect applied. */
+  reconcileDisputeEvidence?(input: {
+    evidence: StorefrontCaseEvidenceText;
+    files: Array<Pick<PaymentDisputeEvidenceFile, "id" | "purpose">>;
+    providerDisputeId: string;
+    submit: boolean;
+  }): Promise<PaymentDisputeEvidenceReconciliation>;
   /** Stage or submit normalized dispute evidence with stable retry identity. */
   submitDisputeEvidence?(input: {
     evidence: StorefrontCaseEvidenceText;

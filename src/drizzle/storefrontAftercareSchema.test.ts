@@ -29,6 +29,7 @@ describe("storefront aftercare timestamps", () => {
       commerceStorefrontCaseEvidenceSubmissions.updated_at,
       commerceStorefrontCaseEvidenceSubmissions.lease_expires_at,
       commerceStorefrontCaseEvidenceSubmissions.next_attempt_at,
+      commerceStorefrontCaseEvidenceSubmissions.reconciled_at,
       commerceStorefrontCaseEvidenceSubmissions.submitted_at,
     ];
 
