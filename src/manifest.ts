@@ -15,7 +15,7 @@ const MAX_LIST_LIMIT = 200;
  * `$self` slots), and a Drizzle schema. Tools run against the app's commerce
  * database (`CommerceDb`). */
 export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
-  contract: 1,
+  contract: 2,
   identity: {
     accent: "#10b981",
     category: "commerce",
@@ -79,6 +79,12 @@ export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
   tools: {
     inventory_levels: tool.runtime({
       annotations: { readOnlyHint: true },
+      authorization: {
+        approval: "never",
+        audience: "admin",
+        effects: ["read"],
+        requiredScopes: ["commerce:read"],
+      },
       description:
         "Current blank-stock inventory (product, size, color, quantity on hand). Set lowOnly to list only items at or below their restock threshold.",
       handler: async ({ lowOnly }, db) => {
@@ -108,6 +114,12 @@ export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
     }),
     list_orders: tool.runtime({
       annotations: { readOnlyHint: true },
+      authorization: {
+        approval: "never",
+        audience: "admin",
+        effects: ["read"],
+        requiredScopes: ["commerce:orders:read"],
+      },
       description:
         "List recent orders (newest first) with status, production stage, total, and tracking. Filter by status: paid, shipped, rejected, failed, or refunded.",
       handler: async ({ limit, status }, db) => {
@@ -150,6 +162,13 @@ export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
     }),
     order_detail: tool.runtime({
       annotations: { readOnlyHint: true },
+      authorization: {
+        approval: "never",
+        audience: "admin",
+        effects: ["read"],
+        requiredScopes: ["commerce:orders:read"],
+        resource: { idField: "sessionId", type: "commerce-order" },
+      },
       description:
         "Full detail for one order by its checkout session id: line items, shipping address, production stage, proof status, and tracking.",
       handler: async ({ sessionId }, db) => {
