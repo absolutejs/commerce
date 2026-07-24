@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/commerce",
-  "version": "0.40.1-beta.3",
+  "version": "0.40.1-beta.4",
   "description": "Provider-agnostic commerce primitives (cart, orders, fulfillment, shipping) for AbsoluteJS",
   "repository": {
     "type": "git",
@@ -53,17 +53,17 @@
   "license": "BSL-1.1",
   "author": "Alex Kahn",
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.tsx ./src/manifest.ts --root ./src --outdir dist --target bun --external drizzle-orm --external react --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external three --external '@react-three/*' && tsc --emitDeclarationOnly --project tsconfig.json && absolute-manifest emit",
+    "build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.tsx ./src/manifest.ts --root ./src --outdir dist --target bun --external drizzle-orm --external react --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external three --external @react-three/drei --external @react-three/fiber && tsc --emitDeclarationOnly --project tsconfig.json && absolute-manifest emit",
     "format": "prettier --write \"./**/*.{js,ts,json,md}\"",
     "release": "bun run build && bun publish --tag beta",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "drizzle-orm": ">=1.0.0-rc.4 <2",
-    "react": ">=18.0.0",
+    "react": ">=18 <20",
     "three": ">=0.185.0 <0.186.0",
-    "@react-three/drei": ">=9.0.0",
-    "@react-three/fiber": ">=8.0.0"
+    "@react-three/drei": ">=10.7.7 <11",
+    "@react-three/fiber": ">=9.6.1 <10"
   },
   "peerDependenciesMeta": {
     "drizzle-orm": {
@@ -83,25 +83,71 @@
     }
   },
   "devDependencies": {
-    "@react-three/drei": "^10.7.7",
-    "@react-three/fiber": "^9.6.1",
+    "@react-three/drei": "10.7.7",
+    "@react-three/fiber": "9.6.1",
     "@types/bun": "1.3.9",
     "@types/react": "^19.0.0",
     "@types/three": "^0.185.0",
     "drizzle-orm": "1.0.0-rc.4",
     "prettier": "^3.9.6",
-    "react": "^19.0.0",
+    "react": "19.2.8",
     "three": "0.185.1",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@absolutejs/manifest": "^0.6.1",
+    "@absolutejs/manifest": "^0.7.1",
     "@sinclair/typebox": "^0.34.0",
     "fflate": "^0.8.3"
   },
   "absolutejs": {
     "manifestContract": 2,
     "runtimePeers": {
+      "@react-three/drei": {
+        "artifactImports": [
+          "@react-three/drei"
+        ],
+        "buildExternals": [
+          "@react-three/drei"
+        ],
+        "optional": true,
+        "range": ">=10.7.7 <11",
+        "tested": "10.7.7"
+      },
+      "@react-three/fiber": {
+        "artifactImports": [
+          "@react-three/fiber"
+        ],
+        "buildExternals": [
+          "@react-three/fiber"
+        ],
+        "optional": true,
+        "range": ">=9.6.1 <10",
+        "tested": "9.6.1"
+      },
+      "drizzle-orm": {
+        "artifactImports": [
+          "drizzle-orm",
+          "drizzle-orm/pg-core"
+        ],
+        "buildExternals": [
+          "drizzle-orm"
+        ],
+        "optional": true,
+        "range": ">=1.0.0-rc.4 <2",
+        "tested": "1.0.0-rc.4"
+      },
+      "react": {
+        "artifactImports": [
+          "react",
+          "react/jsx-dev-runtime"
+        ],
+        "buildExternals": [
+          "react"
+        ],
+        "optional": true,
+        "range": ">=18 <20",
+        "tested": "19.2.8"
+      },
       "three": {
         "artifactImports": ["three"],
         "buildExternals": ["three"],
