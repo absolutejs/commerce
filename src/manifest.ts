@@ -1,8 +1,11 @@
 import { defineManifest, toolFactory } from "@absolutejs/manifest";
 import { Type } from "@sinclair/typebox";
 import { desc, eq, lte } from "drizzle-orm";
-import type { CommerceDb } from "./drizzle";
-import { commerceInventory, commerceOrders } from "./drizzle";
+import {
+  commerceInventory,
+  commerceOrders,
+  type CommerceDb,
+} from "@absolutejs/commerce/drizzle";
 
 const tool = toolFactory<CommerceDb>();
 
@@ -29,7 +32,7 @@ export const manifest = defineManifest<Record<never, never>, CommerceDb>()({
     peers: [
       {
         name: "drizzle-orm",
-        range: ">=1.0.0-rc.4",
+        range: ">=1.0.0-rc.4 <2",
         reason: "order/inventory tables and queries (the ./drizzle subpath)",
       },
     ],
