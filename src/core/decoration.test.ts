@@ -4,6 +4,7 @@ import {
   clampPlacementTransform,
   designDimensions,
   placementBounds,
+  printSheetText,
   workOrderMarkdown,
   type DecorationItemInput,
   type DecorationZoneSpec,
@@ -87,5 +88,56 @@ describe("production item identity", () => {
     expect(spec.items[0]?.identity?.sku).toBe("NK100-NVY-M");
     expect(workOrder).toContain("Nike · NK100 · SKU NK100-NVY-M");
     expect(workOrder).toContain("main / nike-tee / variant-42");
+  });
+});
+
+describe("mixed decoration methods", () => {
+  test("builds embroidery and print facts per placement", () => {
+    const item: DecorationItemInput = {
+      backing: "cutaway",
+      fabric: "100% cotton",
+      garmentColor: { hex: "#111418", name: "Black" },
+      method: "embroidery",
+      methodLabel: "Mixed decoration",
+      names: [],
+      placements: [
+        {
+          artwork: "Chest logo",
+          artworkUrl: "https://example.com/chest.svg",
+          coverage: 0.4,
+          method: "embroidery",
+          methodLabel: "Embroidery",
+          usesStitchSize: true,
+          zone,
+          zoneId: "front",
+          zoneLabel: "Front",
+        },
+        {
+          art: { colorCount: 2, isVector: true, pixelWidth: 1200 },
+          artwork: "Back print",
+          artworkUrl: "https://example.com/back.svg",
+          method: "screen-print",
+          methodLabel: "Screen print",
+          usesStitchSize: false,
+          zone,
+          zoneId: "back",
+          zoneLabel: "Back",
+        },
+      ],
+      product: "Tee",
+      productId: "shirt",
+      quantity: 24,
+      size: "M",
+      usesStitchSize: true,
+    };
+    const spec = buildOrderProductionSpec([item], "2026-07-30T00:00:00Z");
+    const [embroidery, print] = spec.items[0]!.placements;
+
+    expect(embroidery?.estimatedStitches).not.toBeNull();
+    expect(embroidery?.print).toBeNull();
+    expect(print?.estimatedStitches).toBeNull();
+    expect(print?.method).toBe("screen-print");
+    expect(print?.print).not.toBeNull();
+    expect(printSheetText(spec)).toContain("Back (Black garment, Screen print");
   });
 });

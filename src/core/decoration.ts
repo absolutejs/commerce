@@ -685,6 +685,9 @@ export type PlacementSpec = {
   /** Raw brand-color request for print methods, e.g. "PMS 186 C". */
   pmsRequest: string | null;
   print: PrintSpec | null;
+  /** Effective decoration process for this placement (supports mixed jobs). */
+  method: string;
+  methodLabel: string;
 };
 
 export type ItemSpec = {
@@ -784,6 +787,10 @@ export type DecorationPlacementInput = {
   stitchTierLabel?: string | null;
   /** Override the round-hoop suggestion (e.g. "Cap frame"). */
   hoopOverride?: string;
+  /** Override the item's default process for this placement. */
+  method?: string;
+  methodLabel?: string;
+  usesStitchSize?: boolean;
 };
 
 export type DecorationItemInput = {
@@ -817,6 +824,9 @@ const placementSpec = (
   place: DecorationPlacementInput,
 ): PlacementSpec => {
   const transform = place.transform ?? IDENTITY;
+  const method = place.method ?? item.method;
+  const methodLabel = place.methodLabel ?? item.methodLabel;
+  const usesStitchSize = place.usesStitchSize ?? item.usesStitchSize;
   const dims = designDimensions(
     place.zone,
     place.aspect ?? 1,
@@ -832,26 +842,26 @@ const placementSpec = (
     code: placementCode(place.zone, dims),
     dimensions: dims,
     embroideryType: place.embroideryType ?? "flat",
-    estimatedStitches: item.usesStitchSize
+    estimatedStitches: usesStitchSize
       ? estimateStitches(dims, place.coverage ?? 0.4)
       : null,
-    hoop: item.usesStitchSize
-      ? (place.hoopOverride ?? suggestHoop(dims))
-      : null,
+    hoop: usesStitchSize ? (place.hoopOverride ?? suggestHoop(dims)) : null,
     note: place.note ?? null,
+    method,
+    methodLabel,
     pantone: place.pantone ?? null,
     pmsRequest: place.pmsRequest ?? null,
     print: buildPrintSpec(
-      item.method,
+      method,
       place.art,
       dims,
       item.garmentColor.hex,
       item.fabric,
     ),
     rotationDeg: Math.round(transform.rotation * DEG),
-    stitchTier: item.usesStitchSize ? (place.stitchTierLabel ?? null) : null,
+    stitchTier: usesStitchSize ? (place.stitchTierLabel ?? null) : null,
     // Thread cones are an embroidery concept — print methods speak inks.
-    threads: item.usesStitchSize ? (place.threads ?? []) : [],
+    threads: usesStitchSize ? (place.threads ?? []) : [],
     zoneId: place.zoneId,
     zoneLabel: place.zoneLabel,
   };
@@ -872,8 +882,13 @@ export const buildOrderProductionSpec = (
   items: DecorationItemInput[],
   generatedAt: string,
 ): OrderProductionSpec => {
-  const hasEmbroidery = items.some((item) => item.method === "embroidery");
-  const hasPrint = items.some((item) => item.method !== "embroidery");
+  const methods = items.flatMap((item) =>
+    item.placements.length > 0
+      ? item.placements.map((place) => place.method ?? item.method)
+      : [item.method],
+  );
+  const hasEmbroidery = methods.includes("embroidery");
+  const hasPrint = methods.some((method) => method !== "embroidery");
 
   return {
     generatedAt,
@@ -904,7 +919,7 @@ export const buildOrderProductionSpec = (
 /* -------------------------- text sheet renderers ------------------------- */
 
 const placementSequenceLines = (item: ItemSpec, place: PlacementSpec) => {
-  const header = `${item.product} — ${place.zoneLabel} (${item.garmentColor.name} garment, ${item.methodLabel})`;
+  const header = `${item.product} — ${place.zoneLabel} (${item.garmentColor.name} garment, ${place.methodLabel})`;
   const threadLines =
     place.threads.length === 0
       ? ["  (no thread data — assign at digitizing)"]
@@ -1031,7 +1046,7 @@ const printPlacementLines = (item: ItemSpec, place: PlacementSpec) => {
   const codeLabel = placementCodeLabel(place.code);
 
   return [
-    `${item.product} — ${place.zoneLabel} (${item.garmentColor.name} garment, ${item.methodLabel}, qty ${item.quantity})`,
+    `${item.product} — ${place.zoneLabel} (${item.garmentColor.name} garment, ${place.methodLabel}, qty ${item.quantity})`,
     `  Size: ${dims.widthIn}″ × ${dims.heightIn}″${codeLabel ? ` · placement: ${codeLabel}` : ""}`,
     `  Art: ${print.isVector ? "vector" : `raster · ${print.dpiAtSize ?? "?"} DPI at print size`} · ${print.colorCount} color(s)`,
     ...screenPrintLines(print),
@@ -1052,7 +1067,14 @@ const printPlacementLines = (item: ItemSpec, place: PlacementSpec) => {
 // Operator-facing press sheet for print methods: inks with PMS references,
 // mesh/LPI, pretreat, mirror/layer/press instructions per placement.
 export const printSheetText = (spec: OrderProductionSpec) => {
-  const printItems = spec.items.filter((item) => item.method !== "embroidery");
+  const printItems = spec.items
+    .map((item) => ({
+      ...item,
+      placements: item.placements.filter(
+        (place) => place.method !== "embroidery",
+      ),
+    }))
+    .filter((item) => item.placements.length > 0);
   const lines = [
     "PRINT PRODUCTION SHEET",
     "======================",
