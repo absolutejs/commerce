@@ -144,6 +144,10 @@ argument. Retain privacy-safe `ProviderJourneyEvidence` from host requests,
 provider APIs, webhooks, reconciliation, and customer reports, then call
 `summarizeProviderJourney()`.
 
+These Commerce names are compatibility adapters over `@absolutejs/handoff`.
+New cross-domain integrations should import the neutral handoff vocabulary
+directly; Commerce retains payment-specific naming for existing consumers.
+
 The summary keeps customer-reported hosted-page outcomes separate from
 authoritative provider evidence and flags contradictions such as a hosted page
 reporting failure after a webhook confirmed success. Evidence intentionally

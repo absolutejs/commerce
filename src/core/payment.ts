@@ -4,6 +4,14 @@
 //
 // Amounts crossing this boundary are integer minor units (cents).
 
+import {
+  handoffCorrelationFrom,
+  summarizeHandoff,
+  withHandoffCorrelation,
+  type HandoffEvidence,
+  type HandoffEvidenceSource,
+  type HandoffOutcome,
+} from "@absolutejs/handoff";
 import type { Address } from "./shipping";
 import type {
   StorefrontCaseAttachmentPurpose,
@@ -64,8 +72,7 @@ export const PROVIDER_JOURNEY_CORRELATION_KEY = "absolute_provider_correlation";
 export type ProviderJourneyEvidenceSource =
   "host" | "provider_api" | "hosted_page_report" | "webhook" | "reconciliation";
 
-export type ProviderJourneyOutcome =
-  "started" | "pending" | "succeeded" | "failed" | "unknown";
+export type ProviderJourneyOutcome = HandoffOutcome;
 
 /**
  * A privacy-safe observation about work handed to an external provider.
@@ -73,16 +80,12 @@ export type ProviderJourneyOutcome =
  * in the host's protected store; this projection is intentionally joinable
  * without containing them.
  */
-export type ProviderJourneyEvidence = {
-  at: number;
-  correlationId: string;
-  operation: string;
-  outcome: ProviderJourneyOutcome;
+export type ProviderJourneyEvidence = Omit<
+  HandoffEvidence,
+  "service" | "source"
+> & {
   provider: string;
   source: ProviderJourneyEvidenceSource;
-  externalId?: string;
-  message?: string;
-  reference?: string;
 };
 
 export type ProviderJourneySummary = {
@@ -94,41 +97,38 @@ export type ProviderJourneySummary = {
   status: ProviderJourneyOutcome;
 };
 
-const TERMINAL_PROVIDER_JOURNEY_OUTCOMES = new Set<ProviderJourneyOutcome>([
-  "failed",
-  "succeeded",
-]);
-const AUTHORITATIVE_PROVIDER_JOURNEY_SOURCES =
-  new Set<ProviderJourneyEvidenceSource>([
-    "provider_api",
-    "reconciliation",
-    "webhook",
-  ]);
+const handoffSource = (
+  source: ProviderJourneyEvidenceSource,
+): HandoffEvidenceSource =>
+  ({
+    host: "host",
+    hosted_page_report: "external_surface_report",
+    provider_api: "external_api",
+    reconciliation: "reconciliation",
+    webhook: "callback",
+  })[source] as HandoffEvidenceSource;
+
+const providerJourneySource = (
+  source: HandoffEvidenceSource,
+): ProviderJourneyEvidenceSource =>
+  ({
+    callback: "webhook",
+    external_api: "provider_api",
+    external_surface_report: "hosted_page_report",
+    host: "host",
+    reconciliation: "reconciliation",
+  })[source] as ProviderJourneyEvidenceSource;
 
 export const withProviderJourneyCorrelation = (
   metadata: Record<string, string> | undefined,
   correlationId: string,
   key = PROVIDER_JOURNEY_CORRELATION_KEY,
-) => ({
-  ...metadata,
-  [key]: correlationId,
-});
+) => withHandoffCorrelation(metadata, correlationId, key);
 
 export const providerJourneyCorrelationFrom = (
   value: unknown,
   key = PROVIDER_JOURNEY_CORRELATION_KEY,
-) => {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-  const correlationId = (value as Record<string, unknown>)[key];
-
-  return typeof correlationId === "string" &&
-    correlationId.length > 0 &&
-    correlationId.length <= 200
-    ? correlationId
-    : null;
-};
+) => handoffCorrelationFrom(value, key);
 
 /**
  * Reduces evidence from a cross-origin provider journey without pretending the
@@ -139,51 +139,31 @@ export const providerJourneyCorrelationFrom = (
 export const summarizeProviderJourney = (
   evidence: ProviderJourneyEvidence[],
 ): ProviderJourneySummary => {
-  const ordered = evidence.toSorted((left, right) => left.at - right.at);
-  const latest = ordered.at(-1) ?? null;
-  const correlationId = latest?.correlationId ?? "";
-  const matching = ordered.filter(
-    (item) => item.correlationId === correlationId,
+  const summary = summarizeHandoff(
+    evidence.map(({ provider, source, ...item }) => ({
+      ...item,
+      service: provider,
+      source: handoffSource(source),
+    })),
   );
-  const authoritative = matching.filter((item) =>
-    AUTHORITATIVE_PROVIDER_JOURNEY_SOURCES.has(item.source),
-  );
-  const reports = matching.filter(
-    (item) => item.source === "hosted_page_report",
-  );
-  const authoritativeOutcome =
-    authoritative.findLast((item) =>
-      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(item.outcome),
-    )?.outcome ??
-    authoritative.at(-1)?.outcome ??
-    null;
-  const reportedOutcome =
-    reports.findLast((item) =>
-      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(item.outcome),
-    )?.outcome ??
-    reports.at(-1)?.outcome ??
-    null;
-  const terminalAuthoritativeOutcomes = new Set(
-    authoritative
-      .map(({ outcome }) => outcome)
-      .filter((outcome) => TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(outcome)),
-  );
-  const contradiction =
-    terminalAuthoritativeOutcomes.size > 1 ||
-    (authoritativeOutcome !== null &&
-      reportedOutcome !== null &&
-      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(authoritativeOutcome) &&
-      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(reportedOutcome) &&
-      authoritativeOutcome !== reportedOutcome);
+  const latest = (() => {
+    if (summary.latest === null) return null;
+    const { service, source, ...item } = summary.latest;
+
+    return {
+      ...item,
+      provider: service,
+      source: providerJourneySource(source),
+    };
+  })();
 
   return {
-    authoritativeOutcome,
-    contradiction,
-    correlationId,
+    authoritativeOutcome: summary.authoritativeOutcome,
+    contradiction: summary.contradiction,
+    correlationId: summary.correlationId,
     latest,
-    reportedOutcome,
-    status:
-      authoritativeOutcome ?? reportedOutcome ?? latest?.outcome ?? "unknown",
+    reportedOutcome: summary.reportedOutcome,
+    status: summary.status,
   };
 };
 

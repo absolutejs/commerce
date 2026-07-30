@@ -5,6 +5,7 @@
     "": {
       "name": "@absolutejs/commerce",
       "dependencies": {
+        "@absolutejs/handoff": "0.1.0",
         "@absolutejs/manifest": "0.7.2",
         "@sinclair/typebox": "0.34.52",
         "fflate": "0.8.3",
@@ -38,6 +39,8 @@
     },
   },
   "packages": {
+    "@absolutejs/handoff": ["@absolutejs/handoff@0.1.0", "", { "dependencies": { "@absolutejs/manifest": "0.7.2", "@sinclair/typebox": "0.34.52" } }, "sha512-P9Wr2oyYBcj7mriCV4h9zRlLGijee/7DW8USVkl/m4ovql7zpITy547jy6j8+HC5v5Ocs+TVcMYmrROEEBupNg=="],
+
     "@absolutejs/manifest": ["@absolutejs/manifest@0.7.2", "", { "peerDependencies": { "@sinclair/typebox": ">=0.34.0 <0.35.0" }, "bin": { "absolute-manifest": "dist/cli.js" } }, "sha512-NSVzC4yHbH+n+WCNdWYrpbc+3k5rOfO4X85Ku9VCP8teRaa2VEibp29Cyvg9rQARUGaQjGGTz+l+APqM0+odxg=="],
 
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
