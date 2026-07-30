@@ -28,6 +28,22 @@ describe("provider journey evidence", () => {
     ).toBe(null);
   });
 
+  test("supports provider-defined metadata slots", () => {
+    const metadata = withProviderJourneyCorrelation(
+      { field_1: "campaign" },
+      correlationId,
+      "field_20",
+    );
+
+    expect(metadata).toEqual({
+      field_1: "campaign",
+      field_20: correlationId,
+    });
+    expect(providerJourneyCorrelationFrom(metadata, "field_20")).toBe(
+      correlationId,
+    );
+  });
+
   test("surfaces a hosted-page failure contradicted by a successful webhook", () => {
     const evidence: ProviderJourneyEvidence[] = [
       {

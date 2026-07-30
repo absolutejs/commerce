@@ -108,18 +108,20 @@ const AUTHORITATIVE_PROVIDER_JOURNEY_SOURCES =
 export const withProviderJourneyCorrelation = (
   metadata: Record<string, string> | undefined,
   correlationId: string,
+  key = PROVIDER_JOURNEY_CORRELATION_KEY,
 ) => ({
   ...metadata,
-  [PROVIDER_JOURNEY_CORRELATION_KEY]: correlationId,
+  [key]: correlationId,
 });
 
-export const providerJourneyCorrelationFrom = (value: unknown) => {
+export const providerJourneyCorrelationFrom = (
+  value: unknown,
+  key = PROVIDER_JOURNEY_CORRELATION_KEY,
+) => {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
-  const correlationId = (value as Record<string, unknown>)[
-    PROVIDER_JOURNEY_CORRELATION_KEY
-  ];
+  const correlationId = (value as Record<string, unknown>)[key];
 
   return typeof correlationId === "string" &&
     correlationId.length > 0 &&

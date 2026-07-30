@@ -139,7 +139,8 @@ delivery, and incident promotion.
 Hosted checkout and invoice pages run outside the application's origin, so no
 browser SDK can directly capture errors rendered there. Use
 `withProviderJourneyCorrelation()` to stamp a host-owned identity into provider
-metadata, retain privacy-safe `ProviderJourneyEvidence` from host requests,
+metadata. Providers with fixed metadata slots can pass that slot as the third
+argument. Retain privacy-safe `ProviderJourneyEvidence` from host requests,
 provider APIs, webhooks, reconciliation, and customer reports, then call
 `summarizeProviderJourney()`.
 
