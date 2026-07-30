@@ -134,6 +134,21 @@ values, file identifiers, or customer content. Provider adapters implement
 gates reconciliation, staging, final payment-network submission, notification
 delivery, and incident promotion.
 
+### Cross-origin provider journey evidence
+
+Hosted checkout and invoice pages run outside the application's origin, so no
+browser SDK can directly capture errors rendered there. Use
+`withProviderJourneyCorrelation()` to stamp a host-owned identity into provider
+metadata, retain privacy-safe `ProviderJourneyEvidence` from host requests,
+provider APIs, webhooks, reconciliation, and customer reports, then call
+`summarizeProviderJourney()`.
+
+The summary keeps customer-reported hosted-page outcomes separate from
+authoritative provider evidence and flags contradictions such as a hosted page
+reporting failure after a webhook confirmed success. Evidence intentionally
+excludes raw webhook payloads, credentials, card data, and customer data; hosts
+keep those in their own protected stores.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing

@@ -59,6 +59,132 @@ export type CheckoutResult = {
   url: string | null;
 };
 
+export const PROVIDER_JOURNEY_CORRELATION_KEY = "absolute_provider_correlation";
+
+export type ProviderJourneyEvidenceSource =
+  "host" | "provider_api" | "hosted_page_report" | "webhook" | "reconciliation";
+
+export type ProviderJourneyOutcome =
+  "started" | "pending" | "succeeded" | "failed" | "unknown";
+
+/**
+ * A privacy-safe observation about work handed to an external provider.
+ * Keep raw provider payloads, credentials, payment details, and customer data
+ * in the host's protected store; this projection is intentionally joinable
+ * without containing them.
+ */
+export type ProviderJourneyEvidence = {
+  at: number;
+  correlationId: string;
+  operation: string;
+  outcome: ProviderJourneyOutcome;
+  provider: string;
+  source: ProviderJourneyEvidenceSource;
+  externalId?: string;
+  message?: string;
+  reference?: string;
+};
+
+export type ProviderJourneySummary = {
+  authoritativeOutcome: ProviderJourneyOutcome | null;
+  contradiction: boolean;
+  correlationId: string;
+  latest: ProviderJourneyEvidence | null;
+  reportedOutcome: ProviderJourneyOutcome | null;
+  status: ProviderJourneyOutcome;
+};
+
+const TERMINAL_PROVIDER_JOURNEY_OUTCOMES = new Set<ProviderJourneyOutcome>([
+  "failed",
+  "succeeded",
+]);
+const AUTHORITATIVE_PROVIDER_JOURNEY_SOURCES =
+  new Set<ProviderJourneyEvidenceSource>([
+    "provider_api",
+    "reconciliation",
+    "webhook",
+  ]);
+
+export const withProviderJourneyCorrelation = (
+  metadata: Record<string, string> | undefined,
+  correlationId: string,
+) => ({
+  ...metadata,
+  [PROVIDER_JOURNEY_CORRELATION_KEY]: correlationId,
+});
+
+export const providerJourneyCorrelationFrom = (value: unknown) => {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const correlationId = (value as Record<string, unknown>)[
+    PROVIDER_JOURNEY_CORRELATION_KEY
+  ];
+
+  return typeof correlationId === "string" &&
+    correlationId.length > 0 &&
+    correlationId.length <= 200
+    ? correlationId
+    : null;
+};
+
+/**
+ * Reduces evidence from a cross-origin provider journey without pretending the
+ * host can observe the provider page directly. Provider API, webhook, and
+ * reconciliation evidence are authoritative; a hosted-page report is retained
+ * separately so contradictory customer experience becomes actionable.
+ */
+export const summarizeProviderJourney = (
+  evidence: ProviderJourneyEvidence[],
+): ProviderJourneySummary => {
+  const ordered = evidence.toSorted((left, right) => left.at - right.at);
+  const latest = ordered.at(-1) ?? null;
+  const correlationId = latest?.correlationId ?? "";
+  const matching = ordered.filter(
+    (item) => item.correlationId === correlationId,
+  );
+  const authoritative = matching.filter((item) =>
+    AUTHORITATIVE_PROVIDER_JOURNEY_SOURCES.has(item.source),
+  );
+  const reports = matching.filter(
+    (item) => item.source === "hosted_page_report",
+  );
+  const authoritativeOutcome =
+    authoritative.findLast((item) =>
+      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(item.outcome),
+    )?.outcome ??
+    authoritative.at(-1)?.outcome ??
+    null;
+  const reportedOutcome =
+    reports.findLast((item) =>
+      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(item.outcome),
+    )?.outcome ??
+    reports.at(-1)?.outcome ??
+    null;
+  const terminalAuthoritativeOutcomes = new Set(
+    authoritative
+      .map(({ outcome }) => outcome)
+      .filter((outcome) => TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(outcome)),
+  );
+  const contradiction =
+    terminalAuthoritativeOutcomes.size > 1 ||
+    (authoritativeOutcome !== null &&
+      reportedOutcome !== null &&
+      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(authoritativeOutcome) &&
+      TERMINAL_PROVIDER_JOURNEY_OUTCOMES.has(reportedOutcome) &&
+      authoritativeOutcome !== reportedOutcome);
+
+  return {
+    authoritativeOutcome,
+    contradiction,
+    correlationId,
+    latest,
+    reportedOutcome,
+    status:
+      authoritativeOutcome ?? reportedOutcome ?? latest?.outcome ?? "unknown",
+  };
+};
+
 export type CreateCouponInput = {
   percentOff?: number;
   amountOffCents?: number;
