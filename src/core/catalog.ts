@@ -124,13 +124,13 @@ export type ProductMedia = {
   color?: string;
   position?: number;
   /**
-   * Where the asset came from. Supplier/manufacturer assets may be presented
-   * as exact product media when the provider has verified their identity.
-   * Store uploads are useful fallbacks, but are not supplier truth.
+   * Where the asset came from. Supplier/manufacturer assets and a store's own
+   * exact-SKU photography may be presented as exact product media after an
+   * authorized catalog operator verifies identity and display rights.
    */
   source?: "supplier" | "manufacturer" | "store" | "generated" | "unknown";
   sourceId?: string | null;
-  /** Provider attests this depicts the exact style/color/view. */
+  /** An authorized provider/catalog operator attests exact style/color/view. */
   verified?: boolean;
   /** Whether the host is licensed to display the asset. */
   licensed?: boolean;
@@ -144,7 +144,8 @@ export type ExactProductMediaRequirement = {
 };
 
 /**
- * Resolve an exact, licensed supplier/manufacturer photograph. Mockups,
+ * Resolve an exact, authorized product photograph. Verified store photography
+ * is valid evidence when the shop photographed the physical SKU it is selling;
  * generated images, unverified uploads, wrong colors, and wrong views fail
  * closed so callers cannot label an approximation as an exact product photo.
  */
@@ -164,7 +165,9 @@ export const exactProductMedia = (
           item.view === requirement.view &&
           item.verified === true &&
           item.licensed === true &&
-          (item.source === "supplier" || item.source === "manufacturer") &&
+          (item.source === "supplier" ||
+            item.source === "manufacturer" ||
+            item.source === "store") &&
           (!wantedColor ||
             (item.color && normalizeKey(item.color) === wantedColor)),
       )

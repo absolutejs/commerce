@@ -80,7 +80,7 @@ describe("catalog merchandising", () => {
     ]);
   });
 
-  it("only returns licensed verified exact-view supplier photography", () => {
+  it("returns authorized verified exact-view product photography", () => {
     const exact = exactProductMedia(
       [
         {
@@ -115,5 +115,24 @@ describe("catalog merchandising", () => {
     );
 
     expect(exact?.url).toBe("/front.jpg");
+  });
+
+  it("accepts verified store photography of the physical SKU", () => {
+    const exact = exactProductMedia(
+      [
+        {
+          color: "Navy",
+          kind: "image",
+          licensed: true,
+          source: "store",
+          url: "/shop-photographed-navy-front.jpg",
+          verified: true,
+          view: "front",
+        },
+      ],
+      { color: "Navy", view: "front" },
+    );
+
+    expect(exact?.url).toBe("/shop-photographed-navy-front.jpg");
   });
 });
