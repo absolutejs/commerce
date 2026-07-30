@@ -99,6 +99,29 @@ skips fulfillment before invoking a payment refund with the durable action ID;
 ambiguous fulfillment or payment effects quarantine until an explicit
 tenant-fenced retry.
 
+## Product decoration previews and production packets
+
+Use the exact supplier product photograph as the default customization truth:
+
+```tsx
+import { ProductPhotoPreview } from "@absolutejs/commerce/decoration-preview-react";
+```
+
+`ProductPhotoPreview` has no Three.js dependency. It renders bounded artwork
+overlays against the contained source image and uses the same
+`clampPlacementTransform()` geometry as `designDimensions()`, so preview and
+operator measurements cannot disagree. Decoration zones accept a normalized
+`previewBox` tied to the supplier image.
+
+The optional `@absolutejs/commerce/decoration-react` entrypoint provides the 3D
+R3F/drei surface. Load it progressively and describe it as an approximate
+visualization unless the model is authored for the exact supplier variant.
+
+`DecorationItemInput.identity` carries brand, style, SKU, supplier SKU,
+catalog/listing, and variant identity into `OrderProductionSpec`,
+`spec.json`, and the printable work order. Operators can therefore pull the
+exact blank without relying on a separate admin screen.
+
 `createStorefrontAftercareService()` replaces one-off return tables with a
 single durable order-linked case substrate for returns, exchanges, payment
 disputes, and customer support. Guest access reuses the secret checkout token;

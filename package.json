@@ -1,6 +1,6 @@
 {
   "name": "@absolutejs/commerce",
-  "version": "0.40.1-beta.8",
+  "version": "0.40.1-beta.9",
   "description": "Provider-agnostic commerce primitives (cart, orders, fulfillment, shipping) for AbsoluteJS",
   "repository": {
     "type": "git",
@@ -38,6 +38,11 @@
       "import": "./dist/decoration-react/index.js",
       "types": "./dist/decoration-react/index.d.ts"
     },
+    "./decoration-preview-react": {
+      "browser": "./dist/decoration-preview-react/index.js",
+      "import": "./dist/decoration-preview-react/index.js",
+      "types": "./dist/decoration-preview-react/index.d.ts"
+    },
     "./drizzle": {
       "import": "./dist/drizzle/index.js",
       "types": "./dist/drizzle/index.d.ts",
@@ -53,7 +58,7 @@
   "license": "BSL-1.1",
   "author": "Alex Kahn",
   "scripts": {
-    "build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.tsx ./src/manifest.ts --root ./src --outdir dist --target bun --external @absolutejs/commerce --external '@absolutejs/commerce/*' --external @absolutejs/handoff --external @absolutejs/manifest --external @sinclair/typebox --external drizzle-orm --external 'drizzle-orm/*' --external react --external 'react/*' --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external 'react/*' --external three --external 'three/*' --external @react-three/drei --external '@react-three/drei/*' --external @react-three/fiber --external '@react-three/fiber/*' && tsc --emitDeclarationOnly --project tsconfig.json && absolute-manifest emit",
+    "build": "rm -rf dist && bun build ./src/index.ts ./src/drizzle/index.ts ./src/react/index.tsx ./src/manifest.ts --root ./src --outdir dist --target bun --external @absolutejs/commerce --external '@absolutejs/commerce/*' --external @absolutejs/handoff --external @absolutejs/manifest --external @sinclair/typebox --external drizzle-orm --external 'drizzle-orm/*' --external react --external 'react/*' --external fflate && bun build ./src/client/index.ts --outdir dist/client --target browser --format esm && bun build ./src/decoration-react/index.ts --outdir dist/decoration-react --target browser --format esm --external react --external 'react/*' --external three --external 'three/*' --external @react-three/drei --external '@react-three/drei/*' --external @react-three/fiber --external '@react-three/fiber/*' && bun build ./src/decoration-preview-react/index.tsx --outdir dist/decoration-preview-react --target browser --format esm --external react --external 'react/*' && tsc --emitDeclarationOnly --project tsconfig.json && absolute-manifest emit",
     "format": "prettier --write \"./**/*.{js,ts,json,md}\"",
     "release": "bun run check:package && npm publish --access public --tag beta",
     "test": "bun test",

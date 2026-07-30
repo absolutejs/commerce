@@ -42,6 +42,11 @@ export type PlacementTransform = {
   scale: number;
 };
 
+export type PlacementBounds = {
+  maxX: number;
+  maxY: number;
+};
+
 /** One dominant art color and its share of the covered pixels. */
 export type ArtPaletteEntry = { hex: string; share: number };
 
@@ -84,6 +89,44 @@ export const fitDesignIn = (
   return { height: height * factor, width: width * factor };
 };
 
+/**
+ * Maximum center offsets that keep the complete design inside its decoration
+ * zone. Preview surfaces and production specs must use this same calculation
+ * so a customer can never approve a position different from the work order.
+ */
+export const placementBounds = (
+  zone: DecorationZoneSpec,
+  aspect: number,
+  scale: number,
+): PlacementBounds => {
+  const fit = fitDesignIn(zone, aspect, scale);
+
+  return {
+    maxX: Math.max(0, (zone.size[0] - fit.width) / 2),
+    maxY: Math.max(0, (zone.size[1] - fit.height) / 2),
+  };
+};
+
+/**
+ * Normalize a placement to the exact values both preview and production use.
+ * Scale is intentionally clamped by fitDesignIn's public 0.2–1 contract.
+ */
+export const clampPlacementTransform = (
+  zone: DecorationZoneSpec,
+  aspect: number,
+  transform: PlacementTransform,
+): PlacementTransform => {
+  const scale = clamp(transform.scale, 0.2, 1);
+  const bounds = placementBounds(zone, aspect, scale);
+
+  return {
+    offsetX: clamp(transform.offsetX, -bounds.maxX, bounds.maxX),
+    offsetY: clamp(transform.offsetY, -bounds.maxY, bounds.maxY),
+    rotation: Number.isFinite(transform.rotation) ? transform.rotation : 0,
+    scale,
+  };
+};
+
 export type DesignDimensions = {
   widthIn: number;
   heightIn: number;
@@ -103,7 +146,13 @@ export const designDimensions = (
   offsetX: number,
   offsetY: number,
 ): DesignDimensions => {
-  const fit = fitDesignIn(zone, aspect, scale);
+  const transform = clampPlacementTransform(zone, aspect, {
+    offsetX,
+    offsetY,
+    rotation: 0,
+    scale,
+  });
+  const fit = fitDesignIn(zone, aspect, transform.scale);
   const inchesPerUnitX = zone.physical.widthIn / zone.size[0];
   const inchesPerUnitY = zone.physical.heightIn / zone.size[1];
   const widthIn = fit.width * inchesPerUnitX;
@@ -112,8 +161,8 @@ export const designDimensions = (
   return {
     heightIn: round1(heightIn),
     heightMm: Math.round(heightIn * MM_PER_INCH),
-    offsetXIn: round1(offsetX * inchesPerUnitX),
-    offsetYIn: round1(offsetY * inchesPerUnitY),
+    offsetXIn: round1(transform.offsetX * inchesPerUnitX),
+    offsetYIn: round1(transform.offsetY * inchesPerUnitY),
     widthIn: round1(widthIn),
     widthMm: Math.round(widthIn * MM_PER_INCH),
   };
@@ -650,6 +699,20 @@ export type ItemSpec = {
   fabric: string;
   backing: string;
   placements: PlacementSpec[];
+  /** Exact supplier/listing/variant identity for blank pulling and reorders. */
+  identity?: ProductionItemIdentity;
+};
+
+export type ProductionItemIdentity = {
+  brand?: string | null;
+  catalogSlug?: string | null;
+  imageUrl?: string | null;
+  listingSlug?: string | null;
+  productId?: string | null;
+  sku?: string | null;
+  styleCode?: string | null;
+  supplierSku?: string | null;
+  variantId?: string | null;
 };
 
 /** Ground truth read from the digitized machine file (vs our estimates). */
@@ -736,6 +799,8 @@ export type DecorationItemInput = {
   fabric: string;
   backing: string;
   placements: DecorationPlacementInput[];
+  /** Exact supplier/listing/variant identity copied into operator exports. */
+  identity?: ProductionItemIdentity;
 };
 
 const DEG = 180 / Math.PI;
@@ -824,6 +889,7 @@ export const buildOrderProductionSpec = (
       productId: item.productId,
       quantity: item.quantity,
       size: item.size,
+      ...(item.identity ? { identity: item.identity } : {}),
     })),
     notes: [
       ...(hasEmbroidery ? EMBROIDERY_NOTES : []),
@@ -1047,10 +1113,32 @@ export const workOrderMarkdown = (
   }
 
   spec.items.forEach((item, itemIndex) => {
+    const identity = item.identity;
     lines.push(
       `## ${itemIndex + 1}. ${item.product} — ${item.methodLabel}`,
       "",
       `- Garment: ${item.garmentColor.name} (${item.garmentColor.hex}) · size ${item.size} · qty ${item.quantity}`,
+      ...(identity
+        ? [
+            `- Blank: ${[
+              identity.brand,
+              identity.styleCode,
+              identity.sku ? `SKU ${identity.sku}` : null,
+              identity.supplierSku
+                ? `supplier SKU ${identity.supplierSku}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}`,
+            `- Catalog identity: ${[
+              identity.catalogSlug,
+              identity.listingSlug,
+              identity.variantId,
+            ]
+              .filter(Boolean)
+              .join(" / ")}`,
+          ]
+        : []),
       `- Fabric: ${item.fabric} · Backing: ${item.backing}`,
     );
     if (item.names.length > 0)

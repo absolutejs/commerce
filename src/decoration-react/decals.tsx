@@ -8,7 +8,9 @@ import { useThree, type ThreeEvent } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import {
+	clampPlacementTransform,
 	fitDesignIn,
+	placementBounds,
 	type DecorationZoneSpec,
 	type EmbroideryType
 } from '../core/decoration';
@@ -72,7 +74,8 @@ type DragHandlers = {
 export const useZoneDrag = (
 	zone: DecorationZone3D,
 	enabled: boolean,
-	onOffset?: (offsetX: number, offsetY: number) => void
+	onOffset?: (offsetX: number, offsetY: number) => void,
+	design?: { aspect: number; scale: number }
 ): DragHandlers => {
 	const controls = useThree((state) => state.controls) as {
 		enabled: boolean;
@@ -172,9 +175,12 @@ export const useZoneDrag = (
 			}
 			const local = rayToZone(event);
 			if (!local) return;
+			const bounds = design
+				? placementBounds(zone, design.aspect, design.scale)
+				: { maxX: zone.size[0] / 2, maxY: zone.size[1] / 2 };
 			onOffset(
-				clamp(local.x, -zone.size[0] / 2, zone.size[0] / 2),
-				clamp(local.y, -zone.size[1] / 2, zone.size[1] / 2)
+				clamp(local.x, -bounds.maxX, bounds.maxX),
+				clamp(local.y, -bounds.maxY, bounds.maxY)
 			);
 		},
 		onPointerOut: (event) => {
@@ -203,15 +209,14 @@ export const DesignDecal = ({
 }: DesignDecalProps) => {
 	const image = maps.map.image as ImageSize | undefined;
 	const aspect = image && image.height ? image.width / image.height : 1;
-	const { width, height } = fitDesignIn(zone, aspect, transform.scale);
+	const normalized = clampPlacementTransform(zone, aspect, transform);
+	const { width, height } = fitDesignIn(zone, aspect, normalized.scale);
 	const surface = METHOD_SURFACE[method];
 	const normalScale = normalScaleFor(embroideryType);
 
-	const maxX = Math.max(0, (zone.size[0] - width) / 2);
-	const maxY = Math.max(0, (zone.size[1] - height) / 2);
 	const local = new THREE.Vector3(
-		clamp(transform.offsetX, -maxX, maxX),
-		clamp(transform.offsetY, -maxY, maxY),
+		normalized.offsetX,
+		normalized.offsetY,
 		0
 	).applyEuler(new THREE.Euler(...zone.rotation));
 
@@ -223,7 +228,7 @@ export const DesignDecal = ({
 	const rotation: [number, number, number] = [
 		zone.rotation[0],
 		zone.rotation[1],
-		zone.rotation[2] + transform.rotation
+		zone.rotation[2] + normalized.rotation
 	];
 
 	return (
