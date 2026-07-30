@@ -381,10 +381,8 @@ const DPI_MIN = 150;
 const MAX_SPOT_COLORS = 6;
 /** Practical HTV layering limit — more cooks layer 1 under repeated presses. */
 const MAX_VINYL_LAYERS = 3;
-/** Garment halftones: 45 LPI sweet spot, one angle for every screen. */
+/** A quoting heuristic only; the separator/RIP owns final LPI and angles. */
 const HALFTONE_LPI = 45;
-/** 22.5° keeps halftone dots off the mesh-thread axes (moiré). */
-const HALFTONE_ANGLE_DEG = 22.5;
 /** Mesh picks per supplier charts; halftone mesh ≈ 4.5–5× LPI. */
 const MESH_UNDERBASE = "110–156 (110 = one-pass white)";
 const MESH_SPOT = "156–200 (230+ for fine detail)";
@@ -437,7 +435,7 @@ const screenPrintFacts = (
     cureSpec:
       "plastisol full cure ≈320°F ink-film temp on the conveyor — verify with temp strips/donut probe; under-cure fails in the wash",
     flashAfterUnderbase: underbase,
-    halftoneAngleDeg: halftones ? HALFTONE_ANGLE_DEG : null,
+    halftoneAngleDeg: null,
     halftones,
     inkSystem: "plastisol",
     inkSystemNote:
@@ -535,7 +533,7 @@ export const buildPrintSpec = (
   if (method === "screen-print" && facts.colorCount > MAX_SPOT_COLORS)
     warnings.push(
       screenPrint?.halftones
-        ? `${facts.colorCount} colors in raster art — run as halftones/simulated process (${HALFTONE_LPI} LPI @ ${HALFTONE_ANGLE_DEG}°, ${MESH_HALFTONE} mesh) or switch to DTG/DTF.`
+        ? `${facts.colorCount} colors in raster art — simulated/process separation is required; the separator/RIP must assign angles, mesh, underbase, and print order, or switch to DTG/DTF.`
         : `${facts.colorCount} spot colors → ${screens} screens — consider DTG/DTF or simplifying the art.`,
     );
   if (method === "dtg" && dtg?.fabricNote) warnings.push(dtg.fabricNote);
