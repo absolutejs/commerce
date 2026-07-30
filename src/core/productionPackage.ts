@@ -39,8 +39,8 @@ const extensionFrom = (url: string, contentType: string | null) => {
   return "bin";
 };
 
-// Fetch a hosted asset (artwork / production file) for the ZIP.
-// Failures degrade to a note file instead of failing the whole package.
+// Fetch a hosted asset (artwork / production file) for the ZIP. The package
+// builder fails closed if any requested asset cannot be fetched.
 const fetchAsset = async (url: string) => {
   try {
     const response = await fetch(url, {
@@ -97,12 +97,26 @@ const artworkManifest = (spec: OrderProductionSpec, urls: string[]) => {
 };
 
 /** A digitized/cut production file on record for this order. */
+export type ProductionFileKind =
+  | "stitch"
+  | "separation"
+  | "rip"
+  | "cut"
+  | "print-ready"
+  | "approved-proof"
+  | "approved-sewout"
+  | "other";
+
 export type ProductionFileRef = {
   url: string;
   /** Original filename (keep the digitizer's name). */
   filename?: string | null;
   /** Which uploaded artwork it was produced from. */
   artworkUrl?: string | null;
+  /** Stable placement identity; required for production-safe file mapping. */
+  placementId?: string | null;
+  kind?: ProductionFileKind;
+  approved?: boolean;
 };
 
 const NO_FILES_README =
@@ -137,6 +151,71 @@ const addProductionFiles = async (
   );
 };
 
+const methodRequirement = (method: string): ProductionFileKind[] => {
+  if (method === "embroidery") return ["stitch"];
+  if (method === "screen-print") return ["separation", "rip"];
+  if (method === "vinyl") return ["cut"];
+  if (method === "dtf" || method === "dtg" || method === "sublimation")
+    return ["print-ready", "rip"];
+
+  return [];
+};
+
+const placements = (spec: OrderProductionSpec) =>
+  spec.items.flatMap((item) =>
+    item.placements.map((place) => ({ item, place })),
+  );
+
+const productionFileManifest = (
+  spec: OrderProductionSpec,
+  refs: ProductionFileRef[],
+) => {
+  const lines = ["PRODUCTION FILE MANIFEST", "========================", ""];
+  placements(spec).forEach(({ item, place }) => {
+    const matches = refs.filter((ref) => ref.placementId === place.placementId);
+    lines.push(
+      `${place.placementId} · ${item.product} · ${place.zoneLabel} · ${place.methodLabel}`,
+      `  art: ${place.artworkUrl ?? "(missing)"}`,
+      ...(matches.length
+        ? matches.map(
+            (ref) =>
+              `  ${ref.kind ?? "unclassified"}: ${ref.filename ?? ref.url}${ref.approved ? " · approved" : ""}`,
+          )
+        : ["  production file: MISSING"]),
+      "",
+    );
+  });
+
+  return lines.join("\n");
+};
+
+/** Blocking issues that must be resolved before a package is runnable. */
+export const productionReadinessIssues = (
+  spec: OrderProductionSpec,
+  refs: ProductionFileRef[],
+) => {
+  const issues: string[] = [];
+  placements(spec).forEach(({ item, place }) => {
+    if (!place.artworkUrl)
+      issues.push(`${place.placementId}: retained source artwork is missing`);
+    const acceptedKinds = methodRequirement(place.method);
+    if (acceptedKinds.length === 0) return;
+    const matching = refs.filter(
+      (ref) =>
+        ref.placementId === place.placementId &&
+        ref.approved === true &&
+        ref.kind !== undefined &&
+        acceptedKinds.includes(ref.kind),
+    );
+    if (matching.length === 0)
+      issues.push(
+        `${place.placementId}: approved ${acceptedKinds.join(" or ")} file required for ${item.product} / ${place.zoneLabel}`,
+      );
+  });
+
+  return issues;
+};
+
 export type ProductionPackageOrder = {
   session_id: string;
   customer_email: string | null;
@@ -149,6 +228,8 @@ export type ProductionPackageOrder = {
   fulfillment?: string | null;
   proof_status?: string | null;
   sewout_status?: string | null;
+  /** Approved customer proof/sewout assets included in the runnable package. */
+  approval_files?: ProductionFileRef[] | null;
 };
 
 export const buildProductionPackage = async (
@@ -171,9 +252,17 @@ export const buildProductionPackage = async (
   files["work-order.md"] = strToU8(
     workOrderMarkdown(spec, `#${orderRef}`, header),
   );
-  if (spec.items.some((item) => item.method === "embroidery"))
+  if (
+    spec.items.some((item) =>
+      item.placements.some((place) => place.method === "embroidery"),
+    )
+  )
     files["thread-sequence.txt"] = strToU8(threadSequenceText(spec));
-  if (spec.items.some((item) => item.method !== "embroidery"))
+  if (
+    spec.items.some((item) =>
+      item.placements.some((place) => place.method !== "embroidery"),
+    )
+  )
     files["print-sheet.txt"] = strToU8(printSheetText(spec));
 
   const artworkUrls = [...new Set(order.artwork_urls ?? [])];
@@ -185,11 +274,20 @@ export const buildProductionPackage = async (
   const refs =
     order.production_files ??
     (order.digitized_url ? [{ url: order.digitized_url }] : []);
-  await addProductionFiles(files, missing, refs);
+  const approvalRefs = order.approval_files ?? [];
+  const readiness = productionReadinessIssues(spec, refs);
+  if (readiness.length > 0)
+    throw new Error(
+      `Production package is not ready:\n${readiness.join("\n")}`,
+    );
+  files["production-files/MANIFEST.txt"] = strToU8(
+    productionFileManifest(spec, refs),
+  );
+  await addProductionFiles(files, missing, [...refs, ...approvalRefs]);
 
   if (missing.length > 0)
-    files["FETCH-ERRORS.txt"] = strToU8(
-      `These assets could not be fetched at export time:\n${missing.join("\n")}\n`,
+    throw new Error(
+      `Production package export failed; assets could not be fetched:\n${missing.join("\n")}`,
     );
 
   const zipped = zipSync(files, { level: 6 });

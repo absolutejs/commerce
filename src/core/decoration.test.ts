@@ -23,7 +23,7 @@ const zone: DecorationZoneSpec = {
 
 describe("decoration placement normalization", () => {
   test("keeps the whole design inside the zone", () => {
-    const bounds = placementBounds(zone, 2, 1);
+    const bounds = placementBounds(zone, 2, 1, 0.25);
     const normalized = clampPlacementTransform(zone, 2, {
       offsetX: 99,
       offsetY: -99,
@@ -35,6 +35,14 @@ describe("decoration placement normalization", () => {
     expect(normalized.offsetX).toBe(bounds.maxX);
     expect(normalized.offsetY).toBe(-bounds.maxY);
     expect(normalized.rotation).toBe(0.25);
+  });
+
+  test("clamps rotated artwork by its rotated extents", () => {
+    const unrotated = placementBounds(zone, 2, 0.8, 0);
+    const rotated = placementBounds(zone, 2, 0.8, Math.PI / 4);
+
+    expect(rotated.maxX).toBeLessThan(unrotated.maxX);
+    expect(rotated.maxY).toBeLessThan(unrotated.maxY);
   });
 
   test("records the same clamped offsets production preview displays", () => {

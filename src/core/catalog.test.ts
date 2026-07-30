@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   findVariantByOptions,
+  exactProductMedia,
   listingPriceCents,
   mediaForColor,
   optionValues,
@@ -77,5 +78,42 @@ describe("catalog merchandising", () => {
       "/navy.jpg",
       "/generic.jpg",
     ]);
+  });
+
+  it("only returns licensed verified exact-view supplier photography", () => {
+    const exact = exactProductMedia(
+      [
+        {
+          color: "Navy",
+          kind: "mockup",
+          licensed: true,
+          source: "supplier",
+          url: "/mockup.jpg",
+          verified: true,
+          view: "front",
+        },
+        {
+          color: "Navy",
+          kind: "image",
+          licensed: true,
+          source: "supplier",
+          url: "/front.jpg",
+          verified: true,
+          view: "front",
+        },
+        {
+          color: "Navy",
+          kind: "image",
+          licensed: true,
+          source: "supplier",
+          url: "/back.jpg",
+          verified: true,
+          view: "back",
+        },
+      ],
+      { color: "Navy", view: "front" },
+    );
+
+    expect(exact?.url).toBe("/front.jpg");
   });
 });

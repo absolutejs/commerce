@@ -69,6 +69,41 @@ export type CatalogSource = {
   variantsSynced?: number;
 };
 
+export type CatalogProviderCapabilities = {
+  products: true;
+  variants: true;
+  inventory: boolean;
+  pricing: boolean;
+  media: boolean;
+  decorationAreas: boolean;
+};
+
+export type CatalogProviderSyncRequest = {
+  cursor?: string | null;
+  limit?: number;
+  /** Host-owned account reference; credentials remain in the secret store. */
+  accountId: string;
+};
+
+export type CatalogProviderPage = {
+  cursor?: string | null;
+  done: boolean;
+  products: Array<{
+    product: CatalogProduct;
+    variants: ProductVariant[];
+  }>;
+};
+
+/**
+ * Package-level supplier contract. Stores provide credentials/account
+ * selection; adapters fetch and normalize licensed provider truth.
+ */
+export type CatalogProviderAdapter = {
+  provider: string;
+  capabilities: CatalogProviderCapabilities;
+  fetchPage(request: CatalogProviderSyncRequest): Promise<CatalogProviderPage>;
+};
+
 export type CatalogTaxon = {
   /** Provider-stable category, collection, or product-type identity. */
   externalId: string;
@@ -88,6 +123,53 @@ export type ProductMedia = {
   /** Supplier color code/name this asset depicts; absent means universal. */
   color?: string;
   position?: number;
+  /**
+   * Where the asset came from. Supplier/manufacturer assets may be presented
+   * as exact product media when the provider has verified their identity.
+   * Store uploads are useful fallbacks, but are not supplier truth.
+   */
+  source?: "supplier" | "manufacturer" | "store" | "generated" | "unknown";
+  sourceId?: string | null;
+  /** Provider attests this depicts the exact style/color/view. */
+  verified?: boolean;
+  /** Whether the host is licensed to display the asset. */
+  licensed?: boolean;
+  /** Stable provider revision/hash used to invalidate stale snapshots. */
+  revision?: string | null;
+};
+
+export type ExactProductMediaRequirement = {
+  color?: string;
+  view: ProductMediaView;
+};
+
+/**
+ * Resolve an exact, licensed supplier/manufacturer photograph. Mockups,
+ * generated images, unverified uploads, wrong colors, and wrong views fail
+ * closed so callers cannot label an approximation as an exact product photo.
+ */
+export const exactProductMedia = (
+  media: ProductMedia[],
+  requirement: ExactProductMediaRequirement,
+) => {
+  const wantedColor = requirement.color
+    ? normalizeKey(requirement.color)
+    : null;
+
+  return (
+    media
+      .filter(
+        (item) =>
+          item.kind === "image" &&
+          item.view === requirement.view &&
+          item.verified === true &&
+          item.licensed === true &&
+          (item.source === "supplier" || item.source === "manufacturer") &&
+          (!wantedColor ||
+            (item.color && normalizeKey(item.color) === wantedColor)),
+      )
+      .sort(mediaPosition)[0] ?? null
+  );
 };
 
 export type DecorationArea = {

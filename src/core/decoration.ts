@@ -98,12 +98,18 @@ export const placementBounds = (
   zone: DecorationZoneSpec,
   aspect: number,
   scale: number,
+  rotation = 0,
 ): PlacementBounds => {
   const fit = fitDesignIn(zone, aspect, scale);
+  const radians = Number.isFinite(rotation) ? rotation : 0;
+  const cosine = Math.abs(Math.cos(radians));
+  const sine = Math.abs(Math.sin(radians));
+  const rotatedWidth = fit.width * cosine + fit.height * sine;
+  const rotatedHeight = fit.width * sine + fit.height * cosine;
 
   return {
-    maxX: Math.max(0, (zone.size[0] - fit.width) / 2),
-    maxY: Math.max(0, (zone.size[1] - fit.height) / 2),
+    maxX: Math.max(0, (zone.size[0] - rotatedWidth) / 2),
+    maxY: Math.max(0, (zone.size[1] - rotatedHeight) / 2),
   };
 };
 
@@ -117,12 +123,13 @@ export const clampPlacementTransform = (
   transform: PlacementTransform,
 ): PlacementTransform => {
   const scale = clamp(transform.scale, 0.2, 1);
-  const bounds = placementBounds(zone, aspect, scale);
+  const rotation = Number.isFinite(transform.rotation) ? transform.rotation : 0;
+  const bounds = placementBounds(zone, aspect, scale, rotation);
 
   return {
     offsetX: clamp(transform.offsetX, -bounds.maxX, bounds.maxX),
     offsetY: clamp(transform.offsetY, -bounds.maxY, bounds.maxY),
-    rotation: Number.isFinite(transform.rotation) ? transform.rotation : 0,
+    rotation,
     scale,
   };
 };
@@ -666,6 +673,8 @@ export const gangSheetPlan = (
 /* ------------------------------ order spec ------------------------------ */
 
 export type PlacementSpec = {
+  /** Stable identity for file linkage, proof locks, and repeat production. */
+  placementId: string;
   zoneId: string;
   zoneLabel: string;
   /** Decorator shorthand for the spot (LC, FB…), when derivable. */
@@ -728,6 +737,8 @@ export type MachineFileFacts = {
   filename: string;
   /** Which uploaded artwork this file was digitized from (multi-design orders). */
   artworkUrl?: string | null;
+  /** Exact placement this machine file was prepared for. */
+  placementId?: string | null;
 };
 
 export type OrderProductionSpec = {
@@ -748,14 +759,21 @@ export const specMachineFiles = (spec: OrderProductionSpec) =>
 /** The machine file digitized from a placement's artwork, if attached. */
 export const machineFileFor = (
   spec: OrderProductionSpec,
-  place: Pick<PlacementSpec, "artworkUrl">,
+  place: Pick<PlacementSpec, "artworkUrl" | "placementId">,
 ) => {
   const files = specMachineFiles(spec);
 
   return (
     files.find(
-      (file) => file.artworkUrl && file.artworkUrl === place.artworkUrl,
-    ) ?? (files.length === 1 ? files[0] : undefined)
+      (file) => file.placementId && file.placementId === place.placementId,
+    ) ??
+    files.find(
+      (file) =>
+        !file.placementId &&
+        file.artworkUrl &&
+        file.artworkUrl === place.artworkUrl,
+    ) ??
+    (files.length === 1 && !files[0]?.placementId ? files[0] : undefined)
   );
 };
 
@@ -768,6 +786,8 @@ export const totalEstimatedStitches = (spec: OrderProductionSpec) =>
 /* ------------------------- data-in spec building ------------------------- */
 
 export type DecorationPlacementInput = {
+  /** Stable host identity; generated deterministically when omitted. */
+  placementId?: string;
   zone: DecorationZoneSpec;
   zoneId: string;
   zoneLabel: string;
@@ -822,6 +842,7 @@ const IDENTITY: PlacementTransform = {
 const placementSpec = (
   item: DecorationItemInput,
   place: DecorationPlacementInput,
+  placementId: string,
 ): PlacementSpec => {
   const transform = place.transform ?? IDENTITY;
   const method = place.method ?? item.method;
@@ -847,6 +868,7 @@ const placementSpec = (
       : null,
     hoop: usesStitchSize ? (place.hoopOverride ?? suggestHoop(dims)) : null,
     note: place.note ?? null,
+    placementId,
     method,
     methodLabel,
     pantone: place.pantone ?? null,
@@ -899,7 +921,14 @@ export const buildOrderProductionSpec = (
       method: item.method,
       methodLabel: item.methodLabel,
       names: item.names,
-      placements: item.placements.map((place) => placementSpec(item, place)),
+      placements: item.placements.map((place, placeIndex) =>
+        placementSpec(
+          item,
+          place,
+          place.placementId ??
+            `${item.identity?.variantId ?? item.productId}:${place.zoneId}:${placeIndex + 1}`,
+        ),
+      ),
       product: item.product,
       productId: item.productId,
       quantity: item.quantity,
@@ -935,7 +964,14 @@ const placementSequenceLines = (item: ItemSpec, place: PlacementSpec) => {
 // this sheet is what tells the operator which cone goes on which needle.
 // Print-method items are excluded — their colors are inks, not cones.
 export const threadSequenceText = (spec: OrderProductionSpec) => {
-  const embroidery = spec.items.filter((item) => item.method === "embroidery");
+  const embroidery = spec.items
+    .map((item) => ({
+      ...item,
+      placements: item.placements.filter(
+        (place) => place.method === "embroidery",
+      ),
+    }))
+    .filter((item) => item.placements.length > 0);
   const lines = [
     "THREAD COLOR SEQUENCE",
     "=====================",
@@ -970,17 +1006,15 @@ const screenPrintLines = (print: PrintSpec) => {
   if (!facts) return [];
 
   return [
+    "  STATUS: QUOTING ESTIMATE ONLY — attach approved separations/RIP output before production",
     ...facts.inks.map(inkLine),
-    `  Screens: ${print.screens}${facts.underbase ? " (incl. white underbase)" : ""} · mesh: colors ${facts.meshColors}${facts.meshUnderbase ? ` · underbase ${facts.meshUnderbase}` : ""}`,
+    `  Estimated screens: ${print.screens}${facts.underbase ? " (incl. possible white underbase)" : ""}`,
     ...(facts.halftones
       ? [
-          `  Halftones: ${facts.lpi} LPI @ ${facts.halftoneAngleDeg}° (all screens same angle)`,
-          `  Films: output positives at ${facts.lpi} LPI / ${facts.halftoneAngleDeg}° with registration marks`,
+          "  Simulated/process art detected — separator must assign screen angles, mesh, underbase, and print order in the RIP/separation file",
         ]
       : []),
-    `  Ink system: ${facts.inkSystem}${facts.inkSystemNote ? ` — ${facts.inkSystemNote}` : ""}`,
-    `  Print order: ${facts.printOrder.join(" → ")}`,
-    ...(facts.cureSpec ? [`  Cure: ${facts.cureSpec}`] : []),
+    "  Do not burn screens or mix ink from this estimate.",
   ];
 };
 
@@ -1195,7 +1229,7 @@ export const workOrderMarkdown = (
         );
       if (place.hoop) lines.push(`- Hoop: ${place.hoop}`);
       const machineFile =
-        item.method === "embroidery" ? machineFileFor(spec, place) : undefined;
+        place.method === "embroidery" ? machineFileFor(spec, place) : undefined;
       if (machineFile) {
         lines.push(
           `- Machine file: ${machineFile.filename} · ${machineFile.stitches.toLocaleString()} stitches actual · ${machineFile.colorChanges} color changes · ${machineFile.widthMm} × ${machineFile.heightMm} mm`,
