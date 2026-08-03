@@ -101,7 +101,9 @@ tenant-fenced retry.
 
 ## Product decoration previews and production packets
 
-Use the exact supplier product photograph as the default customization truth:
+Use an authorized, verified, and licensed photograph of the exact supplier SKU
+or the exact store-owned blank as the default customization truth. Retain the
+source, SKU match, usage rights, and review evidence with the catalog record:
 
 ```tsx
 import { ProductPhotoPreview } from "@absolutejs/commerce/decoration-preview-react";
@@ -111,7 +113,7 @@ import { ProductPhotoPreview } from "@absolutejs/commerce/decoration-preview-rea
 overlays against the contained source image and uses the same
 `clampPlacementTransform()` geometry as `designDimensions()`, so preview and
 operator measurements cannot disagree. Decoration zones accept a normalized
-`previewBox` tied to the supplier image.
+`previewBox` tied to that evidenced product image.
 
 The optional `@absolutejs/commerce/decoration-react` entrypoint provides the 3D
 R3F/drei surface. Load it progressively and describe it as an approximate
