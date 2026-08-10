@@ -357,3 +357,43 @@ export const setVariantAvailabilities = async (
 
   return updated;
 };
+
+/** Put a synced supplier product on a store's shelf: creates its listing with
+ *  sensible defaults, hidden until the merchant reviews and publishes. No-ops
+ *  (returning the existing row) if the product is already offered, so pickers
+ *  can be idempotent. */
+export const offerCatalogProduct = async (
+  db: CommerceDb,
+  input: {
+    catalogId: string;
+    productId: string;
+    status?: DbCatalogListing["status"];
+  },
+) => {
+  const [existing] = await db
+    .select()
+    .from(commerceCatalogListings)
+    .where(
+      and(
+        eq(commerceCatalogListings.catalog_id, input.catalogId),
+        eq(commerceCatalogListings.product_id, input.productId),
+      ),
+    )
+    .limit(1);
+  if (existing) return { created: false as const, listing: existing };
+  const [product] = await db
+    .select()
+    .from(commerceProducts)
+    .where(eq(commerceProducts.id, input.productId))
+    .limit(1);
+  if (!product) return null;
+  const listing = await createCatalogListing(db, {
+    catalog_id: input.catalogId,
+    product_id: product.id,
+    slug: product.slug,
+    status: input.status ?? "hidden",
+    title: product.title,
+  });
+
+  return { created: true as const, listing };
+};

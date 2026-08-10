@@ -21,6 +21,7 @@ import type {
 } from "../core/catalog";
 import type { CommerceDb } from "./queries";
 import {
+  commerceCatalogListings,
   commerceCatalogSources,
   commerceCatalogSyncRuns,
   commerceCatalogTaxa,
@@ -557,6 +558,9 @@ export const listSynchronizedCatalogProducts = async (
   input: {
     category?: string;
     cursor?: string;
+    /** Hide products that already have a listing in this catalog — the picker
+     *  view of "supplier products you haven't offered yet". */
+    excludeListedInCatalogId?: string;
     limit?: number;
     search?: string;
     sourceId: string;
@@ -570,6 +574,10 @@ export const listSynchronizedCatalogProducts = async (
     eq(commerceProducts.source_id, input.sourceId),
     eq(commerceProducts.status, "active"),
   ];
+  if (input.excludeListedInCatalogId)
+    filters.push(
+      sql<boolean>`not exists (select 1 from ${commerceCatalogListings} listed where listed.product_id = ${commerceProducts.id} and listed.catalog_id = ${input.excludeListedInCatalogId})`,
+    );
   if (input.category)
     filters.push(eq(commerceProducts.category, input.category));
   const search = input.search?.trim();
