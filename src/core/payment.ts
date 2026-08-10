@@ -49,6 +49,9 @@ export type CreateCheckoutInput = {
   successUrl?: string;
   cancelUrl?: string;
   shipping?: CheckoutShipping;
+  /** Ask the hosted page for a phone number; it lands on the session's
+   *  shipping address as `phone` — for shops that live on the telephone. */
+  collectPhone?: boolean;
   /** A coupon id from `createCoupon`, applied to the session. */
   couponId?: string;
   /** Calculate tax automatically when the provider supports it. */
