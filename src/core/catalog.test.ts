@@ -5,6 +5,7 @@ import {
   listingPriceCents,
   mediaForColor,
   optionValues,
+  stockStateForVariants,
   variantIsAvailable,
   type CatalogListing,
   type ProductVariant,
@@ -134,5 +135,32 @@ describe("catalog merchandising", () => {
     );
 
     expect(exact?.url).toBe("/shop-photographed-navy-front.jpg");
+  });
+});
+
+describe("shelf stock state", () => {
+  it("reports available when every variant is sellable", () => {
+    expect(
+      stockStateForVariants([
+        variant("a", "Black", "M"),
+        variant("b", "Black", "L"),
+      ]),
+    ).toBe("available");
+  });
+
+  it("reports partial when some colors or sizes are gone", () => {
+    const gone = { ...variant("b", "Black", "L"), available: false };
+
+    expect(stockStateForVariants([variant("a", "Black", "M"), gone])).toBe(
+      "partial",
+    );
+  });
+
+  it("reports sold-out when nothing is sellable, including zero stock", () => {
+    const zero = variant("a", "Black", "M", 0);
+    const off = { ...variant("b", "Black", "L"), available: false };
+
+    expect(stockStateForVariants([zero, off])).toBe("sold-out");
+    expect(stockStateForVariants([])).toBe("sold-out");
   });
 });

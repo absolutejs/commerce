@@ -298,3 +298,62 @@ export const listCollectionListings = (db: CommerceDb, collectionId: string) =>
     )
     .where(eq(commerceCatalogCollectionListings.collection_id, collectionId))
     .orderBy(asc(commerceCatalogCollectionListings.position));
+
+/** Owner-facing shelf switch: pause ("hidden") or resume ("active") a listing
+ *  without re-importing the product. Targeted so nothing else on the record —
+ *  price, photos, calibration — can be disturbed by a toggle. */
+export const setListingStatus = async (
+  db: CommerceDb,
+  input: { listingId: string; status: DbCatalogListing["status"] },
+) => {
+  const [listing] = await db
+    .update(commerceCatalogListings)
+    .set({ status: input.status, updated_at: new Date() })
+    .where(eq(commerceCatalogListings.id, input.listingId))
+    .returning();
+
+  return listing ?? null;
+};
+
+export type VariantAvailabilityInput = {
+  variantId: string;
+  available: boolean;
+  /** Omit to leave the counted quantity untouched (a pure sold-out flag). */
+  inventoryQuantity?: number;
+};
+
+/** Owner-facing sold-out switch for one exact color/size. */
+export const setVariantAvailability = async (
+  db: CommerceDb,
+  input: VariantAvailabilityInput,
+) => {
+  const [variant] = await db
+    .update(commerceProductVariants)
+    .set({
+      available: input.available,
+      updated_at: new Date(),
+      ...(input.inventoryQuantity === undefined
+        ? {}
+        : { inventory_quantity: input.inventoryQuantity }),
+    })
+    .where(eq(commerceProductVariants.id, input.variantId))
+    .returning();
+
+  return variant ?? null;
+};
+
+/** Batch form — the bridge for apps that reconcile availability from their own
+ *  stock ledger (counted level → sellable flag) in one sweep. */
+export const setVariantAvailabilities = async (
+  db: CommerceDb,
+  inputs: VariantAvailabilityInput[],
+) => {
+  const updated = [];
+  for (const input of inputs) {
+    // eslint-disable-next-line no-await-in-loop -- small batches, plain loop keeps per-row returning
+    const variant = await setVariantAvailability(db, input);
+    if (variant) updated.push(variant);
+  }
+
+  return updated;
+};

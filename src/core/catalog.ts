@@ -328,6 +328,21 @@ export const variantIsAvailable = (variant: ProductVariant) => {
   return (variant.inventoryQuantity ?? 0) > 0;
 };
 
+export type ListingStockState = "available" | "partial" | "sold-out";
+
+/** Shelf state across a listing's variants, for storefront badges and admin
+ *  overviews: every variant sellable → available; none → sold-out; some
+ *  colors/sizes gone → partial. */
+export const stockStateForVariants = (
+  variants: ProductVariant[],
+): ListingStockState => {
+  if (variants.length === 0) return "sold-out";
+  const sellable = variants.filter(variantIsAvailable).length;
+  if (sellable === 0) return "sold-out";
+
+  return sellable === variants.length ? "available" : "partial";
+};
+
 /** Resolve an exact SKU from arbitrary product options (case-insensitive). */
 export const findVariantByOptions = (
   variants: ProductVariant[],
