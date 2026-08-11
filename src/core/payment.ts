@@ -25,6 +25,10 @@ export type CheckoutLineItem = {
   amountCents: number;
   quantity: number;
   taxBehavior?: "inclusive" | "exclusive";
+  /** Provider product tax code (e.g. Stripe `txcd_…`). Automatic tax treats
+   *  untagged lines as general tangible goods, which overtaxes categories
+   *  many US states exempt (clothing, groceries) — tag lines accurately. */
+  taxCode?: string;
 };
 
 export type CheckoutShipping =
