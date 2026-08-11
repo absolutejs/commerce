@@ -297,10 +297,12 @@ export type PaymentProvider = {
   createCoupon(input: CreateCouponInput): Promise<string>;
   /** Fetch a session's current state (for return pages). */
   retrieveCheckout(sessionId: string): Promise<CheckoutSession>;
-  /** Refund with a stable host identity so retries cannot double-refund. */
+  /** Refund with a stable host identity so retries cannot double-refund.
+   *  Omit amountCents for a full refund; pass it for a partial refund. */
   refundBySession(
     sessionId: string,
     idempotencyKey: string,
+    amountCents?: number,
   ): Promise<PaymentRefund>;
   retrieveRefund(providerRefundId: string): Promise<PaymentRefund>;
   /** Read provider state and determine whether an ambiguous evidence effect applied. */
