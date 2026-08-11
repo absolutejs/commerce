@@ -60,6 +60,11 @@ const clamp = (value: number, low: number, high: number) =>
 const DRAG_PLANE_TOLERANCE = 0.14;
 // Grab margin around the zone so edges are easy to catch.
 const DRAG_GRAB_PAD = 0.05;
+// The zone must meaningfully face the camera to start a drag. Thin garment
+// meshes put the back/side silhouette within DRAG_PLANE_TOLERANCE of the
+// zone plane, which used to swallow orbit drags from behind — and a drag
+// ray near-parallel to the plane can't position the design anyway.
+const DRAG_MIN_FACING_DOT = 0.35;
 
 type DragHandlers = {
 	onPointerCancel: (event: ThreeEvent<PointerEvent>) => void;
@@ -98,16 +103,19 @@ export const useZoneDrag = (
 			.sub(new THREE.Vector3(...zone.position))
 			.applyQuaternion(inverseRotation);
 
+	const zoneWorldNormal = (event: ThreeEvent<PointerEvent>) =>
+		new THREE.Vector3(0, 0, 1)
+			.applyEuler(new THREE.Euler(...zone.rotation))
+			.transformDirection(event.eventObject.matrixWorld)
+			.normalize();
+
 	// Pointer ray ∩ zone plane, in zone-local coordinates — keeps the drag
 	// smooth even when the pointer slides off the mesh silhouette.
 	const rayToZone = (event: ThreeEvent<PointerEvent>) => {
 		const origin = event.eventObject.localToWorld(
 			new THREE.Vector3(...zone.position)
 		);
-		const normal = new THREE.Vector3(0, 0, 1)
-			.applyEuler(new THREE.Euler(...zone.rotation))
-			.transformDirection(event.eventObject.matrixWorld)
-			.normalize();
+		const normal = zoneWorldNormal(event);
 		const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
 			normal,
 			origin
@@ -122,6 +130,9 @@ export const useZoneDrag = (
 	};
 
 	const overDesign = (event: ThreeEvent<PointerEvent>) => {
+		// Viewing the zone edge-on or from behind must orbit, never grab.
+		if (zoneWorldNormal(event).dot(event.ray.direction) > -DRAG_MIN_FACING_DOT)
+			return false;
 		const local = surfaceToZone(event);
 
 		return (
@@ -144,11 +155,19 @@ export const useZoneDrag = (
 		}
 	};
 
-	const endDrag = (event: ThreeEvent<PointerEvent>) => {
+	// Event-free tail of endDrag: also runs from a document-level fallback,
+	// because a pointerup released over empty background never raycasts to
+	// the mesh — without the fallback, orbit controls stayed disabled.
+	const finishDrag = () => {
 		if (!draggingRef.current) return;
 		draggingRef.current = false;
 		if (controls) controls.enabled = true;
 		renderer.domElement.style.cursor = 'grab';
+	};
+
+	const endDrag = (event: ThreeEvent<PointerEvent>) => {
+		if (!draggingRef.current) return;
+		finishDrag();
 		capturePointer(event, false);
 	};
 
@@ -162,6 +181,9 @@ export const useZoneDrag = (
 			if (controls) controls.enabled = false;
 			renderer.domElement.style.cursor = 'grabbing';
 			capturePointer(event, true);
+			const doc = renderer.domElement.ownerDocument;
+			doc.addEventListener('pointerup', finishDrag, { once: true });
+			doc.addEventListener('pointercancel', finishDrag, { once: true });
 		},
 		onPointerMove: (event) => {
 			if (!onOffset) return;
@@ -285,9 +307,12 @@ export const PlacementDecal = ({
 	);
 };
 
+// raycast disabled: three raycasts lines with a 1-world-unit threshold, so a
+// hittable outline makes the ENTIRE viewport "over the design" — every drag
+// grabbed the design (with the hit snapped onto the outline) and orbit died.
 export const ZoneOutline = ({ zone }: { zone: DecorationZone3D }) => (
 	<group position={zone.position} rotation={zone.rotation}>
-		<lineSegments position={[0, 0, 0.006]}>
+		<lineSegments position={[0, 0, 0.006]} raycast={() => null}>
 			<edgesGeometry
 				args={[new THREE.PlaneGeometry(zone.size[0], zone.size[1])]}
 			/>
