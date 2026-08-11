@@ -15,6 +15,7 @@ export * from "./core/machineFiles";
 export * from "./core/money";
 export * from "./core/orders";
 export * from "./core/payment";
+export * from "./core/decorationPricing";
 export * from "./core/pricing";
 export * from "./core/productionPackage";
 export * from "./core/shipping";
