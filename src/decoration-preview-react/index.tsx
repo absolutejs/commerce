@@ -244,7 +244,7 @@ const garmentMask = (
 		const distance =
 			Math.abs(r - red) + Math.abs(g - green) + Math.abs(b - blue);
 		// Far from the background color → garment.
-		const byDistance = Math.min(1, Math.max(0, (distance - 24) / 48));
+		const byDistance = Math.min(1, Math.max(0, (distance - 40) / 60));
 		// A neutral (white / grey) pixel on a warm sweep → garment, even when
 		// its brightness is within noise of the background.
 		const byWarmth =
@@ -253,14 +253,63 @@ const garmentMask = (
 						1,
 						Math.max(
 							0,
-							1 - (r - b - 1) / (backgroundWarmth * 0.7)
+							(backgroundWarmth * 0.75 - (r - b)) /
+								(backgroundWarmth * 0.45)
 						)
 					)
 				: 0;
 		mask[pixel] = Math.max(byDistance, byWarmth);
 	}
 
-	return mask;
+	// Lossy photos are grainy: a blurred mask drops speckle and gives the
+	// garment a soft edge, then a smoothstep firms the interior back up.
+	const blurred = boxBlur(mask, width, height, 4);
+	for (let pixel = 0; pixel < blurred.length; pixel += 1) {
+		const value = blurred[pixel] ?? 0;
+		const t = Math.min(1, Math.max(0, (value - 0.3) / 0.4));
+		blurred[pixel] = t * t * (3 - 2 * t);
+	}
+
+	return blurred;
+};
+
+const boxBlur = (
+	source: Float32Array,
+	width: number,
+	height: number,
+	radius: number
+) => {
+	const horizontal = new Float32Array(source.length);
+	const output = new Float32Array(source.length);
+	const span = radius * 2 + 1;
+	for (let y = 0; y < height; y += 1) {
+		let sum = 0;
+		for (let x = -radius; x <= radius; x += 1)
+			sum += source[y * width + Math.min(width - 1, Math.max(0, x))] ?? 0;
+		for (let x = 0; x < width; x += 1) {
+			horizontal[y * width + x] = sum / span;
+			const leaving = Math.max(0, x - radius);
+			const entering = Math.min(width - 1, x + radius + 1);
+			sum +=
+				(source[y * width + entering] ?? 0) -
+				(source[y * width + leaving] ?? 0);
+		}
+	}
+	for (let x = 0; x < width; x += 1) {
+		let sum = 0;
+		for (let y = -radius; y <= radius; y += 1)
+			sum += horizontal[Math.min(height - 1, Math.max(0, y)) * width + x] ?? 0;
+		for (let y = 0; y < height; y += 1) {
+			output[y * width + x] = sum / span;
+			const leaving = Math.max(0, y - radius);
+			const entering = Math.min(height - 1, y + radius + 1);
+			sum +=
+				(horizontal[entering * width + x] ?? 0) -
+				(horizontal[leaving * width + x] ?? 0);
+		}
+	}
+
+	return output;
 };
 
 /** Recolors garment pixels in place: each pixel keeps its shading relative

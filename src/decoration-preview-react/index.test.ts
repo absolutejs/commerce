@@ -78,20 +78,20 @@ describe("product photo preview geometry", () => {
 
   test("keeps an opaque studio background and recolors only the garment", () => {
     // 4x4: cream background border, a 2x2 white garment in the middle
-    const w = 4,
-      h = 4;
+    const w = 32,
+      h = 32;
     const data = new Uint8ClampedArray(w * h * 4);
     for (let p = 0; p < w * h; p++) {
       const x = p % w,
         y = Math.floor(p / w);
-      const garment = x >= 1 && x <= 2 && y >= 1 && y <= 2;
+      const garment = x >= 8 && x < 24 && y >= 8 && y < 24;
       data.set(garment ? [255, 255, 255, 255] : [246, 242, 234, 255], p * 4);
     }
     recolorGarmentPixels(data, [20, 40, 120], { height: h, width: w });
     // corner stays cream
     expect([data[0], data[1], data[2]]).toEqual([246, 242, 234]);
     // centre becomes the tint
-    const c = (1 * w + 1) * 4;
+    const c = (16 * w + 16) * 4;
     expect(data[c]).toBeLessThan(60);
     expect(data[c + 2]).toBeGreaterThan(100);
   });
