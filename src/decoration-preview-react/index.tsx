@@ -577,10 +577,23 @@ export const recolorGarmentPixels = (
   // white square. Only meaningful when a mask exists (opaque photo).
   if (backdrop && mask && size) {
     const sweep = sweepField(data, size.width, size.height);
+    // A de-fringed edge pixel can never be brighter than the garment's own
+    // brightest fabric: cap it at the median lifted by the same headroom
+    // the recolor allows, so a bright JPEG halo can't become a white rim.
+    const capWeight = (pixel: number) =>
+      (data[pixel * 4 + 3] ?? 0) < 16 ? 0 : (mask[pixel] ?? 0);
+    const capColor = medianColor(data, capWeight);
+    const capLum =
+      luminance(capColor[0], capColor[1], capColor[2]) *
+      (luminance(capColor[0], capColor[1], capColor[2]) < 96 ? 1.35 : 1.12);
     for (let index = 0; index < data.length; index += 4) {
       const pixel = index / 4;
       if ((data[index + 3] ?? 0) < 16) continue;
-      const keep = mask[pixel] ?? 0;
+      // The mask's faint tail lies over pure sweep (often a bright JPEG
+      // halo); counting it as a sliver of garment lets de-fringing rebuild
+      // a pale line there. Below a third, it is backdrop.
+      const rawKeep = mask[pixel] ?? 0;
+      const keep = rawKeep < 0.35 ? 0 : rawKeep;
       const x = pixel % size.width;
       const y = (pixel - x) / size.width;
       // Keep the photo's own shading of the sweep (soft shadow under the
@@ -603,18 +616,24 @@ export const recolorGarmentPixels = (
           ),
       );
       const shade = 1 - (1 - rawShade) * 0.3;
+      const estimate: [number, number, number] = [0, 0, 0];
       for (let channel = 0; channel < 3; channel += 1) {
         const value = data[index + channel] ?? 0;
-        // A partial edge pixel is a blend of garment and sweep; pull the
-        // sweep's share back out before compositing so the rim does not
-        // carry the old studio color onto the new backdrop.
-        const garment =
+        estimate[channel] =
           keep > 0.02 && keep < 0.98
             ? Math.min(
                 255,
                 Math.max(0, (value - sweep(x, y, channel) * (1 - keep)) / keep),
               )
             : value;
+      }
+      const estimateLum = luminance(estimate[0], estimate[1], estimate[2]);
+      const capScale =
+        keep < 0.98 && estimateLum > capLum
+          ? capLum / Math.max(1, estimateLum)
+          : 1;
+      for (let channel = 0; channel < 3; channel += 1) {
+        const garment = (estimate[channel] ?? 0) * capScale;
         data[index + channel] = Math.round(
           garment * keep + (backdrop[channel] ?? 0) * shade * (1 - keep),
         );
