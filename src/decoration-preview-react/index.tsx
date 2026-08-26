@@ -34,6 +34,8 @@ export type PhotoDecorationZone = DecorationZoneSpec & {
 };
 
 export type PhotoPlacedDesign = {
+	/** Stable layer id when a zone carries several designs (z-order = array order). */
+	id?: string;
 	alt?: string;
 	aspect: number;
 	src: string;
@@ -450,7 +452,13 @@ type ProductPhotoPreviewProps = {
 	 *  the top handle rotates) and drag-to-move. When given, a selection
 	 *  frame with handles renders around the active design. */
 	onTransformChange?: (transform: PlacementTransform) => void;
+	/** Called when a placement is pressed; lets the host change which layer
+	 *  is selected before the move gesture continues. */
+	onSelect?: (id: string) => void;
 	placements: PhotoPlacedDesign[];
+	/** Which placement carries the frame/handles and receives transforms.
+	 *  Defaults to the first placement in the active zone. */
+	selectedId?: string;
 	showZone?: boolean;
 	style?: CSSProperties;
 	/** Garment color hex to preview the photo in (e.g. the variant color).
@@ -460,6 +468,7 @@ type ProductPhotoPreviewProps = {
 };
 
 type Gesture = {
+	id: string;
 	kind: 'move' | 'scale' | 'rotate';
 	center: { x: number; y: number };
 	start: PlacementTransform;
@@ -515,7 +524,9 @@ export const ProductPhotoPreview = ({
 	imageUrl,
 	onDragOffset,
 	onTransformChange,
+	onSelect,
 	placements,
+	selectedId,
 	showZone = true,
 	style,
 	tint
@@ -563,9 +574,15 @@ export const ProductPhotoPreview = ({
 		[container, imageSize]
 	);
 	const activePixelZone = pixelZone(image, activeZone.previewBox);
-	const activeDesign = placements.find(
+	const keyOf = (placement: PhotoPlacedDesign) =>
+		placement.id ?? placement.zoneId;
+	const inZone = placements.filter(
 		(placement) => placement.zoneId === activeZone.id
 	);
+	const activeDesign =
+		(selectedId
+			? inZone.find((placement) => keyOf(placement) === selectedId)
+			: undefined) ?? inZone[inZone.length - 1];
 	const editable = dragEnabled && Boolean(activeDesign);
 
 	const localPoint = (event: { clientX: number; clientY: number }) => {
@@ -578,17 +595,20 @@ export const ProductPhotoPreview = ({
 	};
 
 	const begin =
-		(kind: Gesture['kind']) => (event: ReactPointerEvent<HTMLElement>) => {
-			if (!editable || !activeDesign) return;
+		(kind: Gesture['kind'], target = activeDesign) =>
+		(event: ReactPointerEvent<HTMLElement>) => {
+			if (!dragEnabled || !target) return;
 			event.preventDefault();
 			event.stopPropagation();
-			const box = photoPlacementStyle(image, activeDesign);
+			if (target !== activeDesign) onSelect?.(keyOf(target));
+			const box = photoPlacementStyle(image, target);
 			const center = { x: Number(box.left), y: Number(box.top) };
 			const point = localPoint(event);
 			setGesture({
 				center,
+				id: keyOf(target),
 				kind,
-				start: activeDesign.transform,
+				start: target.transform,
 				startAngle: Math.atan2(point.y - center.y, point.x - center.x),
 				startDistance: Math.hypot(
 					point.x - center.x,
@@ -601,11 +621,15 @@ export const ProductPhotoPreview = ({
 	// Window-level listeners so a fast drag that leaves the handle (or the
 	// stage) keeps tracking until the pointer is released.
 	useEffect(() => {
-		if (!gesture || !activeDesign) return undefined;
+		if (!gesture) return undefined;
+		const target = placements.find(
+			(placement) => keyOf(placement) === gesture.id
+		);
+		if (!target) return undefined;
 		const emit = (transform: PlacementTransform) => {
 			const normalized = clampPlacementTransform(
 				activeZone,
-				activeDesign.aspect,
+				target.aspect,
 				transform
 			);
 			if (onTransformChange) onTransformChange(normalized);
@@ -663,7 +687,7 @@ export const ProductPhotoPreview = ({
 		};
 	}, [
 		gesture,
-		activeDesign,
+		placements,
 		activePixelZone,
 		activeZone,
 		onDragOffset,
@@ -727,18 +751,19 @@ export const ProductPhotoPreview = ({
 					alt={design.alt ?? ''}
 					data-decoration-art={design.zoneId}
 					draggable={false}
-					key={design.zoneId}
+					key={keyOf(design)}
 					onPointerDown={
 						design.zoneId === activeZone.id
-							? begin('move')
+							? begin('move', design)
 							: undefined
 					}
 					src={design.src}
 					style={{
 						...photoPlacementStyle(image, design),
 						cursor:
-							editable && design.zoneId === activeZone.id
-								? gesture?.kind === 'move'
+							dragEnabled && design.zoneId === activeZone.id
+								? gesture?.kind === 'move' &&
+									gesture.id === keyOf(design)
 									? 'grabbing'
 									: 'move'
 								: 'default',

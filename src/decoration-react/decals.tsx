@@ -38,6 +38,8 @@ export type DesignTransform = {
 
 // One design placed on one zone of the product.
 export type PlacedDesign = {
+	/** Stable layer id when a zone carries several designs. */
+	id?: string;
 	zoneId: string;
 	zone: DecorationZone3D;
 	src: string;
@@ -340,7 +342,7 @@ export const Decoration = ({
 		{placements.map((design) => (
 			<PlacementDecal
 				design={design}
-				key={design.zoneId}
+				key={design.id ?? design.zoneId}
 				threadCatalog={threadCatalog}
 			/>
 		))}
