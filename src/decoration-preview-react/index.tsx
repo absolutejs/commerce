@@ -141,6 +141,36 @@ export const photoPlacementStyle = (
 	};
 };
 
+/** Multiply-tints the garment photo to a target color. The layer is
+ *  masked by the photo's own alpha, so a background-keyed product image
+ *  tints only the garment; an opaque photo tints its whole rectangle. */
+export const photoTintStyle = (
+	image: ContainedImageRect,
+	imageUrl: string,
+	tint: string
+): CSSProperties => {
+	const mask = `url("${imageUrl.replace(/"/g, '%22')}")`;
+
+	return {
+		WebkitMaskImage: mask,
+		WebkitMaskPosition: 'center',
+		WebkitMaskRepeat: 'no-repeat',
+		WebkitMaskSize: '100% 100%',
+		background: tint,
+		height: image.height,
+		left: image.left,
+		maskImage: mask,
+		maskPosition: 'center',
+		maskRepeat: 'no-repeat',
+		maskSize: '100% 100%',
+		mixBlendMode: 'multiply',
+		pointerEvents: 'none',
+		position: 'absolute',
+		top: image.top,
+		width: image.width
+	};
+};
+
 type ProductPhotoPreviewProps = {
 	activeZone: PhotoDecorationZone;
 	alt: string;
@@ -151,6 +181,8 @@ type ProductPhotoPreviewProps = {
 	placements: PhotoPlacedDesign[];
 	showZone?: boolean;
 	style?: CSSProperties;
+	/** Garment color to multiply over the photo (e.g. the variant hex). */
+	tint?: string | null;
 };
 
 const BASE_STAGE: CSSProperties = {
@@ -182,9 +214,11 @@ export const ProductPhotoPreview = ({
 	onDragOffset,
 	placements,
 	showZone = true,
-	style
+	style,
+	tint
 }: ProductPhotoPreviewProps) => {
 	const stageRef = useRef<HTMLDivElement>(null);
+	const imageRef = useRef<HTMLImageElement>(null);
 	const [container, setContainer] = useState({ height: 0, width: 0 });
 	const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
 	const [dragging, setDragging] = useState(false);
@@ -200,6 +234,18 @@ export const ProductPhotoPreview = ({
 
 		return () => observer.disconnect();
 	}, []);
+
+	// A cached (or server-rendered) photo can finish loading before React
+	// attaches onLoad — read its size directly so overlays never stay 0×0.
+	useEffect(() => {
+		const node = imageRef.current;
+		if (node?.complete && node.naturalWidth > 0)
+			setImageSize({
+				height: node.naturalHeight,
+				width: node.naturalWidth
+			});
+		else setImageSize({ height: 0, width: 0 });
+	}, [imageUrl]);
 
 	const image = useMemo(
 		() =>
@@ -256,9 +302,17 @@ export const ProductPhotoPreview = ({
 						width: event.currentTarget.naturalWidth
 					})
 				}
+				ref={imageRef}
 				src={imageUrl}
 				style={PRODUCT_IMAGE}
 			/>
+			{tint && image.width > 0 && (
+				<div
+					aria-hidden
+					data-preview-tint={tint}
+					style={photoTintStyle(image, imageUrl, tint)}
+				/>
+			)}
 			{showZone && image.width > 0 && (
 				<div
 					aria-hidden

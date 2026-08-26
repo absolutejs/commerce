@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   containedImageRect,
   photoPlacementStyle,
+  photoTintStyle,
   type PhotoPlacedDesign,
 } from "./index";
 
@@ -41,5 +42,17 @@ describe("product photo preview geometry", () => {
     expect(style.height).toBe(250);
     expect(style.left).toBe(625);
     expect(style.top).toBe(375);
+  });
+
+  test("tint layer covers exactly the contained photo and is masked by it", () => {
+    const image = containedImageRect(1000, 800, 1000, 1000);
+    const style = photoTintStyle(image, 'https://x.test/a "b".webp', "#112233");
+
+    expect(style.left).toBe(100);
+    expect(style.width).toBe(800);
+    expect(style.height).toBe(800);
+    expect(style.background).toBe("#112233");
+    expect(style.mixBlendMode).toBe("multiply");
+    expect(style.maskImage).toBe('url("https://x.test/a %22b%22.webp")');
   });
 });
