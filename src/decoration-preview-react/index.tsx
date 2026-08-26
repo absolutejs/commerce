@@ -473,7 +473,12 @@ export const ProductPhotoPreview = ({
 							!onDragOffset
 						)
 							return;
-						event.currentTarget.setPointerCapture(event.pointerId);
+						try {
+							event.currentTarget.setPointerCapture(event.pointerId);
+						} catch {
+							// Synthetic or already-released pointers can't be
+							// captured; dragging still tracks moves on the image.
+						}
 						setDragging(true);
 					}}
 					onPointerMove={move}
