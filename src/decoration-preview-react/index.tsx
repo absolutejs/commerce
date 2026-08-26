@@ -440,15 +440,19 @@ const garmentMask = (
     // Far from the local sweep color → garment.
     const byDistance = Math.min(1, Math.max(0, (distance - 24) / 50));
     // A neutral (white / grey) pixel on a warm sweep → garment, even when
-    // its brightness is within noise of the background.
+    // its brightness is within noise of the background. Warmth is measured
+    // relative to brightness: the grey contact shadow hugging a garment is
+    // the sweep darkened (same warmth ratio → background), while a shaded
+    // fold on a white tee is neutral at any brightness (→ garment).
+    const pixelLum = luminance(r, g, b);
+    const sweepLum = luminance(sr, sg, sb);
+    const pixelWarm = (r - b) / Math.max(1, pixelLum);
+    const sweepWarm = (sr - sb) / Math.max(1, sweepLum);
     const byWarmth =
-      backgroundWarmth > 5
+      backgroundWarmth > 5 && sweepWarm > 0.02
         ? Math.min(
             1,
-            Math.max(
-              0,
-              (backgroundWarmth * 0.75 - (r - b)) / (backgroundWarmth * 0.45),
-            ),
+            Math.max(0, (sweepWarm * 0.75 - pixelWarm) / (sweepWarm * 0.45)),
           )
         : 0;
     mask[pixel] = Math.max(byDistance, byWarmth);
@@ -475,7 +479,9 @@ const garmentMask = (
   const pass1 = firm(boxBlur(mask, width, height, 3 * scale), 0.35, 0.65);
   const pass2 = firm(boxBlur(pass1, width, height, 2 * scale), 0.3, 0.7);
 
-  return firm(boxBlur(pass2, width, height, scale), 0.45, 0.95);
+  // Bias the last pass inward: the blend zone must sit over garment, never
+  // over sweep, or de-fringing rebuilds the sweep colour as a pale rim.
+  return firm(boxBlur(pass2, width, height, scale), 0.58, 0.98);
 };
 
 const boxBlur = (
@@ -581,9 +587,10 @@ export const recolorGarmentPixels = (
       // garment) by scaling the backdrop with the pixel's luminance
       // relative to a white sweep.
       // Relative to the local sweep, not to white: a sweep pixel lands on
-      // the backdrop exactly (no faint rectangle on a vignetted photo) and
-      // only the garment's cast shadow stays darker.
-      const shade = Math.min(
+      // the backdrop exactly (no faint rectangle on a vignetted photo).
+      // The garment's cast shadow is kept only faintly — at full strength
+      // it draws a dark outline around dark garments on a dark backdrop.
+      const rawShade = Math.min(
         1.02,
         luminance(
           data[index] ?? 0,
@@ -595,6 +602,7 @@ export const recolorGarmentPixels = (
             luminance(sweep(x, y, 0), sweep(x, y, 1), sweep(x, y, 2)),
           ),
       );
+      const shade = 1 - (1 - rawShade) * 0.3;
       for (let channel = 0; channel < 3; channel += 1) {
         const value = data[index + channel] ?? 0;
         // A partial edge pixel is a blend of garment and sweep; pull the
