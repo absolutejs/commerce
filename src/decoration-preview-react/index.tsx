@@ -9,7 +9,8 @@ import {
 	useRef,
 	useState,
 	type CSSProperties,
-	type PointerEvent as ReactPointerEvent
+	type PointerEvent as ReactPointerEvent,
+	type ReactNode
 } from 'react';
 import {
 	clampPlacementTransform,
@@ -596,6 +597,8 @@ type ProductPhotoPreviewProps = {
 	/** Color to paint the photo's studio sweep (with `tint`), e.g. the
 	 *  dark-theme stage color, so the photo blends into its container. */
 	backdrop?: string | null;
+	/** Shown in place of the photo while its tinted version is rendering. */
+	placeholder?: ReactNode;
 };
 
 type Gesture = {
@@ -662,7 +665,8 @@ export const ProductPhotoPreview = ({
 	showZone = true,
 	style,
 	tint,
-	backdrop
+	backdrop,
+	placeholder
 }: ProductPhotoPreviewProps) => {
 	const stageRef = useRef<HTMLDivElement>(null);
 	const imageRef = useRef<HTMLImageElement>(null);
@@ -864,6 +868,7 @@ export const ProductPhotoPreview = ({
 					visibility: pending ? 'hidden' : 'visible'
 				}}
 			/>
+			{pending && placeholder}
 			{tint && !recolored && !pending && image.width > 0 && (
 				<div
 					aria-hidden
