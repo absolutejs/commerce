@@ -365,9 +365,28 @@ const boxBlur = (
 export const recolorGarmentPixels = (
 	data: Uint8ClampedArray,
 	tint: [number, number, number],
-	size?: GarmentMaskOptions
+	size?: GarmentMaskOptions,
+	backdrop?: [number, number, number]
 ) => {
 	const mask = garmentMask(data, size);
+	// Optional: paint the studio sweep a chosen color (e.g. the dark-theme
+	// canvas) so the photo blends into the stage instead of sitting on a
+	// white square. Only meaningful when a mask exists (opaque photo).
+	if (backdrop && mask) {
+		for (let index = 0; index < data.length; index += 4) {
+			const pixel = index / 4;
+			if ((data[index + 3] ?? 0) < 16) continue;
+			const garment = mask[pixel] ?? 0;
+			const keep = garment;
+			// Keep the photo's own shading of the sweep (soft shadow under the
+			// garment) by scaling the backdrop with the pixel's luminance
+			// relative to a white sweep.
+			const shade = Math.min(1.05, luminance(data[index] ?? 0, data[index + 1] ?? 0, data[index + 2] ?? 0) / 240);
+			data[index] = Math.round((data[index] ?? 0) * keep + backdrop[0] * shade * (1 - keep));
+			data[index + 1] = Math.round((data[index + 1] ?? 0) * keep + backdrop[1] * shade * (1 - keep));
+			data[index + 2] = Math.round((data[index + 2] ?? 0) * keep + backdrop[2] * shade * (1 - keep));
+		}
+	}
 	const weight = (pixel: number) => {
 		const alpha = data[pixel * 4 + 3] ?? 0;
 		if (alpha < 16) return 0;
@@ -417,11 +436,13 @@ export const recolorGarmentPixels = (
  *  the caller falls back to the CSS multiply layer in that case. */
 export const useRecoloredPhoto = (
 	imageUrl: string,
-	tint: string | null | undefined
+	tint: string | null | undefined,
+	backdrop?: string | null
 ) => {
 	const [url, setUrl] = useState<string | null>(null);
 	useEffect(() => {
 		const rgb = tint ? parseHexColor(tint) : null;
+		const backdropRgb = backdrop ? parseHexColor(backdrop) : null;
 		if (!rgb) {
 			setUrl(null);
 
@@ -446,10 +467,12 @@ export const useRecoloredPhoto = (
 					canvas.width,
 					canvas.height
 				);
-				recolorGarmentPixels(pixels.data, rgb, {
-					height: canvas.height,
-					width: canvas.width
-				});
+				recolorGarmentPixels(
+					pixels.data,
+					rgb,
+					{ height: canvas.height, width: canvas.width },
+					backdropRgb ?? undefined
+				);
 				context.putImageData(pixels, 0, 0);
 				canvas.toBlob((blob) => {
 					if (!blob || cancelled) return;
@@ -470,7 +493,7 @@ export const useRecoloredPhoto = (
 			cancelled = true;
 			if (objectUrl) URL.revokeObjectURL(objectUrl);
 		};
-	}, [imageUrl, tint]);
+	}, [imageUrl, tint, backdrop]);
 
 	return url;
 };
@@ -501,6 +524,9 @@ type ProductPhotoPreviewProps = {
 	 *  Same-origin photos are recolored by luminance; cross-origin photos
 	 *  fall back to a multiply layer masked by the photo's alpha. */
 	tint?: string | null;
+	/** Color to paint the photo's studio sweep (with `tint`), e.g. the
+	 *  dark-theme stage color, so the photo blends into its container. */
+	backdrop?: string | null;
 };
 
 type Gesture = {
@@ -566,11 +592,12 @@ export const ProductPhotoPreview = ({
 	selectedId,
 	showZone = true,
 	style,
-	tint
+	tint,
+	backdrop
 }: ProductPhotoPreviewProps) => {
 	const stageRef = useRef<HTMLDivElement>(null);
 	const imageRef = useRef<HTMLImageElement>(null);
-	const recolored = useRecoloredPhoto(imageUrl, tint);
+	const recolored = useRecoloredPhoto(imageUrl, tint, backdrop);
 	const shownUrl = recolored ?? imageUrl;
 	const [container, setContainer] = useState({ height: 0, width: 0 });
 	const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
