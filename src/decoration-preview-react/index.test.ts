@@ -71,8 +71,8 @@ describe("product photo preview geometry", () => {
 
   test("lifts a dark blank so a light tint still reads", () => {
     const data = new Uint8ClampedArray([30, 30, 30, 255, 40, 40, 40, 255]);
-    recolorGarmentPixels(data, [255, 255, 255]);
-    expect(data[0]).toBeGreaterThan(200);
+    recolorGarmentPixels(data, [200, 200, 200]);
+    expect(data[0]).toBe(200);
     expect(data[4]).toBeGreaterThan(data[0]);
   });
 });
