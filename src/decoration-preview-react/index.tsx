@@ -171,6 +171,132 @@ export const photoTintStyle = (
 	};
 };
 
+const parseHexColor = (value: string): [number, number, number] | null => {
+	const hex = value.trim().replace(/^#/, '');
+	const full =
+		hex.length === 3
+			? hex
+					.split('')
+					.map((char) => char + char)
+					.join('')
+			: hex;
+	if (!/^[0-9a-f]{6}$/i.test(full)) return null;
+
+	return [
+		parseInt(full.slice(0, 2), 16),
+		parseInt(full.slice(2, 4), 16),
+		parseInt(full.slice(4, 6), 16)
+	];
+};
+
+const luminance = (r: number, g: number, b: number) =>
+	0.2126 * r + 0.7152 * g + 0.0722 * b;
+
+/** Recolors garment pixels in place: each pixel keeps its shading relative
+ *  to the garment's median brightness and takes the tint's hue, so a black
+ *  hoodie can preview as red and a white tee as navy. Transparent pixels
+ *  (a background-keyed product photo) are left untouched. */
+export const recolorGarmentPixels = (
+	data: Uint8ClampedArray,
+	tint: [number, number, number]
+) => {
+	const histogram = new Uint32Array(256);
+	let counted = 0;
+	for (let index = 0; index < data.length; index += 4) {
+		if ((data[index + 3] ?? 0) < 16) continue;
+		const level = Math.round(
+			luminance(data[index] ?? 0, data[index + 1] ?? 0, data[index + 2] ?? 0)
+		);
+		histogram[level] = (histogram[level] ?? 0) + 1;
+		counted += 1;
+	}
+	if (counted === 0) return;
+	let seen = 0;
+	let median = 255;
+	for (let level = 0; level < 256; level += 1) {
+		seen += histogram[level] ?? 0;
+		if (seen >= counted / 2) {
+			median = Math.max(1, level);
+			break;
+		}
+	}
+	// Photos of dark blanks hide their folds in near-black; give them a
+	// little room above the median so highlights survive on light tints.
+	const headroom = median < 96 ? 1.35 : 1.12;
+	for (let index = 0; index < data.length; index += 4) {
+		if ((data[index + 3] ?? 0) < 16) continue;
+		const level = luminance(
+			data[index] ?? 0,
+			data[index + 1] ?? 0,
+			data[index + 2] ?? 0
+		);
+		const shade = Math.min(headroom, level / median);
+		data[index] = Math.min(255, Math.round(tint[0] * shade));
+		data[index + 1] = Math.min(255, Math.round(tint[1] * shade));
+		data[index + 2] = Math.min(255, Math.round(tint[2] * shade));
+	}
+};
+
+/** Renders a recolored copy of the product photo for the given tint, or
+ *  null while loading / when the photo is cross-origin (canvas tainted) —
+ *  the caller falls back to the CSS multiply layer in that case. */
+export const useRecoloredPhoto = (
+	imageUrl: string,
+	tint: string | null | undefined
+) => {
+	const [url, setUrl] = useState<string | null>(null);
+	useEffect(() => {
+		const rgb = tint ? parseHexColor(tint) : null;
+		if (!rgb) {
+			setUrl(null);
+
+			return undefined;
+		}
+		let cancelled = false;
+		let objectUrl: string | null = null;
+		const source = new Image();
+		source.crossOrigin = 'anonymous';
+		source.onload = () => {
+			if (cancelled) return;
+			try {
+				const canvas = document.createElement('canvas');
+				canvas.width = source.naturalWidth;
+				canvas.height = source.naturalHeight;
+				const context = canvas.getContext('2d');
+				if (!context) return;
+				context.drawImage(source, 0, 0);
+				const pixels = context.getImageData(
+					0,
+					0,
+					canvas.width,
+					canvas.height
+				);
+				recolorGarmentPixels(pixels.data, rgb);
+				context.putImageData(pixels, 0, 0);
+				canvas.toBlob((blob) => {
+					if (!blob || cancelled) return;
+					objectUrl = URL.createObjectURL(blob);
+					setUrl(objectUrl);
+				}, 'image/png');
+			} catch {
+				// Tainted canvas (cross-origin photo without CORS) — fall back.
+				setUrl(null);
+			}
+		};
+		source.onerror = () => {
+			if (!cancelled) setUrl(null);
+		};
+		source.src = imageUrl;
+
+		return () => {
+			cancelled = true;
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+	}, [imageUrl, tint]);
+
+	return url;
+};
+
 type ProductPhotoPreviewProps = {
 	activeZone: PhotoDecorationZone;
 	alt: string;
@@ -181,7 +307,9 @@ type ProductPhotoPreviewProps = {
 	placements: PhotoPlacedDesign[];
 	showZone?: boolean;
 	style?: CSSProperties;
-	/** Garment color to multiply over the photo (e.g. the variant hex). */
+	/** Garment color hex to preview the photo in (e.g. the variant color).
+	 *  Same-origin photos are recolored by luminance; cross-origin photos
+	 *  fall back to a multiply layer masked by the photo's alpha. */
 	tint?: string | null;
 };
 
@@ -219,6 +347,8 @@ export const ProductPhotoPreview = ({
 }: ProductPhotoPreviewProps) => {
 	const stageRef = useRef<HTMLDivElement>(null);
 	const imageRef = useRef<HTMLImageElement>(null);
+	const recolored = useRecoloredPhoto(imageUrl, tint);
+	const shownUrl = recolored ?? imageUrl;
 	const [container, setContainer] = useState({ height: 0, width: 0 });
 	const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
 	const [dragging, setDragging] = useState(false);
@@ -245,7 +375,7 @@ export const ProductPhotoPreview = ({
 				width: node.naturalWidth
 			});
 		else setImageSize({ height: 0, width: 0 });
-	}, [imageUrl]);
+	}, [shownUrl]);
 
 	const image = useMemo(
 		() =>
@@ -303,10 +433,10 @@ export const ProductPhotoPreview = ({
 					})
 				}
 				ref={imageRef}
-				src={imageUrl}
+				src={shownUrl}
 				style={PRODUCT_IMAGE}
 			/>
-			{tint && image.width > 0 && (
+			{tint && !recolored && image.width > 0 && (
 				<div
 					aria-hidden
 					data-preview-tint={tint}

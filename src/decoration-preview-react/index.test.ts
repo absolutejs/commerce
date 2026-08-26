@@ -3,6 +3,7 @@ import {
   containedImageRect,
   photoPlacementStyle,
   photoTintStyle,
+  recolorGarmentPixels,
   type PhotoPlacedDesign,
 } from "./index";
 
@@ -54,5 +55,24 @@ describe("product photo preview geometry", () => {
     expect(style.background).toBe("#112233");
     expect(style.mixBlendMode).toBe("multiply");
     expect(style.maskImage).toBe('url("https://x.test/a %22b%22.webp")');
+  });
+
+  test("recolors opaque garment pixels by relative shade and skips keyed background", () => {
+    // white garment (255) with a fold (128), one transparent background pixel
+    const data = new Uint8ClampedArray([
+      255, 255, 255, 255, 128, 128, 128, 255, 255, 255, 255, 255, 10, 10, 10, 0,
+    ]);
+    recolorGarmentPixels(data, [200, 0, 100]);
+    expect([data[0], data[1], data[2]]).toEqual([200, 0, 100]);
+    expect(data[4]).toBeLessThan(120);
+    expect(data[6]).toBeLessThan(60);
+    expect([data[12], data[13], data[14]]).toEqual([10, 10, 10]);
+  });
+
+  test("lifts a dark blank so a light tint still reads", () => {
+    const data = new Uint8ClampedArray([30, 30, 30, 255, 40, 40, 40, 255]);
+    recolorGarmentPixels(data, [255, 255, 255]);
+    expect(data[0]).toBeGreaterThan(200);
+    expect(data[4]).toBeGreaterThan(data[0]);
   });
 });
