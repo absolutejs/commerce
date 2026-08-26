@@ -431,35 +431,59 @@ export const recolorGarmentPixels = (
 	}
 };
 
-/** Renders a recolored copy of the product photo for the given tint, or
- *  null while loading / when the photo is cross-origin (canvas tainted) —
- *  the caller falls back to the CSS multiply layer in that case. */
-export const useRecoloredPhoto = (
-	imageUrl: string,
-	tint: string | null | undefined,
-	backdrop?: string | null
-) => {
-	const [url, setUrl] = useState<string | null>(null);
-	useEffect(() => {
-		const rgb = tint ? parseHexColor(tint) : null;
-		const backdropRgb = backdrop ? parseHexColor(backdrop) : null;
-		if (!rgb) {
-			setUrl(null);
+const recolorCache = new Map<string, string>();
+const recolorPending = new Map<string, Promise<string | null>>();
+const RECOLOR_CACHE_LIMIT = 48;
 
-			return undefined;
+const recolorKey = (
+	imageUrl: string,
+	tint: string,
+	backdrop: string | null | undefined
+) => `${imageUrl}|${tint.toLowerCase()}|${(backdrop ?? '').toLowerCase()}`;
+
+const remember = (key: string, url: string) => {
+	if (recolorCache.size >= RECOLOR_CACHE_LIMIT) {
+		const oldest = recolorCache.keys().next().value;
+		if (oldest) {
+			const stale = recolorCache.get(oldest);
+			recolorCache.delete(oldest);
+			if (stale) URL.revokeObjectURL(stale);
 		}
-		let cancelled = false;
-		let objectUrl: string | null = null;
+	}
+	recolorCache.set(key, url);
+};
+
+/** Recolor `imageUrl` in `tint` (optionally repainting the sweep with
+ *  `backdrop`) and cache the result. Call ahead of time for every side of
+ *  a product so switching views is instant. Resolves null when the photo
+ *  is cross-origin (tainted canvas) or fails to load. */
+export const prepareRecoloredPhoto = (
+	imageUrl: string,
+	tint: string,
+	backdrop?: string | null
+): Promise<string | null> => {
+	const key = recolorKey(imageUrl, tint, backdrop);
+	const hit = recolorCache.get(key);
+	if (hit) return Promise.resolve(hit);
+	const inFlight = recolorPending.get(key);
+	if (inFlight) return inFlight;
+	const rgb = parseHexColor(tint);
+	if (!rgb) return Promise.resolve(null);
+	const backdropRgb = backdrop ? parseHexColor(backdrop) : null;
+	const work = new Promise<string | null>((resolve) => {
 		const source = new Image();
 		source.crossOrigin = 'anonymous';
 		source.onload = () => {
-			if (cancelled) return;
 			try {
 				const canvas = document.createElement('canvas');
 				canvas.width = source.naturalWidth;
 				canvas.height = source.naturalHeight;
 				const context = canvas.getContext('2d');
-				if (!context) return;
+				if (!context) {
+					resolve(null);
+
+					return;
+				}
 				context.drawImage(source, 0, 0);
 				const pixels = context.getImageData(
 					0,
@@ -475,27 +499,54 @@ export const useRecoloredPhoto = (
 				);
 				context.putImageData(pixels, 0, 0);
 				canvas.toBlob((blob) => {
-					if (!blob || cancelled) return;
-					objectUrl = URL.createObjectURL(blob);
-					setUrl(objectUrl);
+					if (!blob) {
+						resolve(null);
+
+						return;
+					}
+					const url = URL.createObjectURL(blob);
+					remember(key, url);
+					resolve(url);
 				}, 'image/png');
 			} catch {
 				// Tainted canvas (cross-origin photo without CORS) — fall back.
-				setUrl(null);
+				resolve(null);
 			}
 		};
-		source.onerror = () => {
-			if (!cancelled) setUrl(null);
-		};
+		source.onerror = () => resolve(null);
 		source.src = imageUrl;
+	}).finally(() => recolorPending.delete(key));
+	recolorPending.set(key, work);
+
+	return work;
+};
+
+/** The recolored photo for the given tint, or null while it is being
+ *  produced (or when it cannot be) — the caller then shows the raw photo.
+ *  A cached result is returned synchronously, so a view that was prepared
+ *  ahead of time never flashes the previous view or the raw image. */
+export const useRecoloredPhoto = (
+	imageUrl: string,
+	tint: string | null | undefined,
+	backdrop?: string | null
+) => {
+	const key = tint ? recolorKey(imageUrl, tint, backdrop) : null;
+	const [, bump] = useState(0);
+	useEffect(() => {
+		if (!tint || !key || recolorCache.has(key)) return undefined;
+		let cancelled = false;
+		prepareRecoloredPhoto(imageUrl, tint, backdrop).then(() => {
+			if (!cancelled) bump((value) => value + 1);
+
+			return undefined;
+		});
 
 		return () => {
 			cancelled = true;
-			if (objectUrl) URL.revokeObjectURL(objectUrl);
 		};
-	}, [imageUrl, tint, backdrop]);
+	}, [imageUrl, tint, backdrop, key]);
 
-	return url;
+	return key ? (recolorCache.get(key) ?? null) : null;
 };
 
 type ProductPhotoPreviewProps = {
