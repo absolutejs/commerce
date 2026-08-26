@@ -192,18 +192,98 @@ const parseHexColor = (value: string): [number, number, number] | null => {
 const luminance = (r: number, g: number, b: number) =>
 	0.2126 * r + 0.7152 * g + 0.0722 * b;
 
+type GarmentMaskOptions = {
+	height: number;
+	width: number;
+};
+
+/** How much of a pixel is garment (1) versus studio background (0). Sampled
+ *  against the photo's own corners, so a white tee on a cream sweep and a
+ *  black hoodie on a white sweep both key without any pre-cut asset. The
+ *  ramp is continuous — no flood fill, so no stepped edges or speckles. */
+const garmentMask = (
+	data: Uint8ClampedArray,
+	size: GarmentMaskOptions | undefined
+): Float32Array | null => {
+	if (!size || size.width < 4 || size.height < 4) return null;
+	const { width, height } = size;
+	const seeds = [
+		[0, 0],
+		[width - 1, 0],
+		[0, height - 1],
+		[width - 1, height - 1],
+		[Math.floor(width / 2), 0],
+		[Math.floor(width / 2), height - 1],
+		[0, Math.floor(height / 2)],
+		[width - 1, Math.floor(height / 2)]
+	];
+	let red = 0;
+	let green = 0;
+	let blue = 0;
+	let opaqueSeeds = 0;
+	for (const [x, y] of seeds) {
+		const index = ((y ?? 0) * width + (x ?? 0)) * 4;
+		if ((data[index + 3] ?? 0) < 16) continue;
+		red += data[index] ?? 0;
+		green += data[index + 1] ?? 0;
+		blue += data[index + 2] ?? 0;
+		opaqueSeeds += 1;
+	}
+	// Transparent corners mean the photo is already cut out — alpha is the mask.
+	if (opaqueSeeds === 0) return null;
+	red /= opaqueSeeds;
+	green /= opaqueSeeds;
+	blue /= opaqueSeeds;
+	const backgroundWarmth = red - blue;
+	const mask = new Float32Array(width * height);
+	for (let pixel = 0; pixel < mask.length; pixel += 1) {
+		const index = pixel * 4;
+		const r = data[index] ?? 0;
+		const g = data[index + 1] ?? 0;
+		const b = data[index + 2] ?? 0;
+		const distance =
+			Math.abs(r - red) + Math.abs(g - green) + Math.abs(b - blue);
+		// Far from the background color → garment.
+		const byDistance = Math.min(1, Math.max(0, (distance - 24) / 48));
+		// A neutral (white / grey) pixel on a warm sweep → garment, even when
+		// its brightness is within noise of the background.
+		const byWarmth =
+			backgroundWarmth > 5
+				? Math.min(
+						1,
+						Math.max(
+							0,
+							1 - (r - b - 1) / (backgroundWarmth * 0.7)
+						)
+					)
+				: 0;
+		mask[pixel] = Math.max(byDistance, byWarmth);
+	}
+
+	return mask;
+};
+
 /** Recolors garment pixels in place: each pixel keeps its shading relative
  *  to the garment's median brightness and takes the tint's hue, so a black
- *  hoodie can preview as red and a white tee as navy. Transparent pixels
- *  (a background-keyed product photo) are left untouched. */
+ *  hoodie can preview as red and a white tee as navy. Studio background is
+ *  kept (soft-keyed against the photo's corners when `size` is given);
+ *  transparent pixels are left untouched. */
 export const recolorGarmentPixels = (
 	data: Uint8ClampedArray,
-	tint: [number, number, number]
+	tint: [number, number, number],
+	size?: GarmentMaskOptions
 ) => {
+	const mask = garmentMask(data, size);
+	const weight = (pixel: number) => {
+		const alpha = data[pixel * 4 + 3] ?? 0;
+		if (alpha < 16) return 0;
+
+		return mask ? (mask[pixel] ?? 0) : 1;
+	};
 	const histogram = new Uint32Array(256);
 	let counted = 0;
 	for (let index = 0; index < data.length; index += 4) {
-		if ((data[index + 3] ?? 0) < 16) continue;
+		if (weight(index / 4) < 0.5) continue;
 		const level = Math.round(
 			luminance(data[index] ?? 0, data[index + 1] ?? 0, data[index + 2] ?? 0)
 		);
@@ -224,16 +304,17 @@ export const recolorGarmentPixels = (
 	// little room above the median so highlights survive on light tints.
 	const headroom = median < 96 ? 1.35 : 1.12;
 	for (let index = 0; index < data.length; index += 4) {
-		if ((data[index + 3] ?? 0) < 16) continue;
-		const level = luminance(
-			data[index] ?? 0,
-			data[index + 1] ?? 0,
-			data[index + 2] ?? 0
-		);
-		const shade = Math.min(headroom, level / median);
-		data[index] = Math.min(255, Math.round(tint[0] * shade));
-		data[index + 1] = Math.min(255, Math.round(tint[1] * shade));
-		data[index + 2] = Math.min(255, Math.round(tint[2] * shade));
+		const amount = weight(index / 4);
+		if (amount <= 0) continue;
+		const r = data[index] ?? 0;
+		const g = data[index + 1] ?? 0;
+		const b = data[index + 2] ?? 0;
+		const shade = Math.min(headroom, luminance(r, g, b) / median);
+		const mix = (from: number, to: number) =>
+			Math.round(from + (Math.min(255, to) - from) * amount);
+		data[index] = mix(r, tint[0] * shade);
+		data[index + 1] = mix(g, tint[1] * shade);
+		data[index + 2] = mix(b, tint[2] * shade);
 	}
 };
 
@@ -271,7 +352,10 @@ export const useRecoloredPhoto = (
 					canvas.width,
 					canvas.height
 				);
-				recolorGarmentPixels(pixels.data, rgb);
+				recolorGarmentPixels(pixels.data, rgb, {
+					height: canvas.height,
+					width: canvas.width
+				});
 				context.putImageData(pixels, 0, 0);
 				canvas.toBlob((blob) => {
 					if (!blob || cancelled) return;
