@@ -432,6 +432,7 @@ export const recolorGarmentPixels = (
 };
 
 const recolorCache = new Map<string, string>();
+const recolorFailed = new Set<string>();
 const recolorPending = new Map<string, Promise<string | null>>();
 const RECOLOR_CACHE_LIMIT = 48;
 
@@ -510,10 +511,14 @@ export const prepareRecoloredPhoto = (
 				}, 'image/png');
 			} catch {
 				// Tainted canvas (cross-origin photo without CORS) — fall back.
+				recolorFailed.add(key);
 				resolve(null);
 			}
 		};
-		source.onerror = () => resolve(null);
+		source.onerror = () => {
+			recolorFailed.add(key);
+			resolve(null);
+		};
 		source.src = imageUrl;
 	}).finally(() => recolorPending.delete(key));
 	recolorPending.set(key, work);
@@ -547,6 +552,19 @@ export const useRecoloredPhoto = (
 	}, [imageUrl, tint, backdrop, key]);
 
 	return key ? (recolorCache.get(key) ?? null) : null;
+};
+
+/** True while a tinted photo is still being produced (nothing cached yet
+ *  and no failure recorded) — the caller can hide the raw photo meanwhile. */
+export const isRecolorPending = (
+	imageUrl: string,
+	tint: string | null | undefined,
+	backdrop?: string | null
+) => {
+	if (!tint) return false;
+	const key = recolorKey(imageUrl, tint, backdrop);
+
+	return !recolorCache.has(key) && !recolorFailed.has(key);
 };
 
 type ProductPhotoPreviewProps = {
@@ -650,6 +668,9 @@ export const ProductPhotoPreview = ({
 	const imageRef = useRef<HTMLImageElement>(null);
 	const recolored = useRecoloredPhoto(imageUrl, tint, backdrop);
 	const shownUrl = recolored ?? imageUrl;
+	// Until the tinted version exists, keep the raw photo invisible (it still
+	// loads so the stage can measure it) instead of flashing the untinted one.
+	const pending = !recolored && isRecolorPending(imageUrl, tint, backdrop);
 	const [container, setContainer] = useState({ height: 0, width: 0 });
 	const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
 	const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -837,9 +858,13 @@ export const ProductPhotoPreview = ({
 				}
 				ref={imageRef}
 				src={shownUrl}
-				style={{ ...PRODUCT_IMAGE, objectFit: fit }}
+				style={{
+					...PRODUCT_IMAGE,
+					objectFit: fit,
+					visibility: pending ? 'hidden' : 'visible'
+				}}
 			/>
-			{tint && !recolored && image.width > 0 && (
+			{tint && !recolored && !pending && image.width > 0 && (
 				<div
 					aria-hidden
 					data-preview-tint={tint}
@@ -862,7 +887,7 @@ export const ProductPhotoPreview = ({
 					}}
 				/>
 			)}
-			{placements.map((design) => (
+			{!pending && placements.map((design) => (
 				<img
 					alt={design.alt ?? ''}
 					data-decoration-art={design.zoneId}
