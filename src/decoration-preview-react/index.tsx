@@ -51,6 +51,40 @@ export type ContainedImageRect = {
 	width: number;
 };
 
+export type PhotoFit = 'contain' | 'cover';
+
+/** Where the photo lands inside the stage for a given object-fit: contain
+ *  letterboxes inside the container, cover fills it and overflows (the
+ *  overlays follow the same rect, so a covered photo crops honestly). */
+export const fittedImageRect = (
+	containerWidth: number,
+	containerHeight: number,
+	imageWidth: number,
+	imageHeight: number,
+	fit: PhotoFit = 'contain'
+): ContainedImageRect => {
+	if (
+		containerWidth <= 0 ||
+		containerHeight <= 0 ||
+		imageWidth <= 0 ||
+		imageHeight <= 0
+	)
+		return { height: 0, left: 0, top: 0, width: 0 };
+	const scale =
+		fit === 'cover'
+			? Math.max(containerWidth / imageWidth, containerHeight / imageHeight)
+			: Math.min(containerWidth / imageWidth, containerHeight / imageHeight);
+	const width = imageWidth * scale;
+	const height = imageHeight * scale;
+
+	return {
+		height,
+		left: (containerWidth - width) / 2,
+		top: (containerHeight - height) / 2,
+		width
+	};
+};
+
 export const containedImageRect = (
 	containerWidth: number,
 	containerHeight: number,
@@ -446,6 +480,8 @@ type ProductPhotoPreviewProps = {
 	alt: string;
 	className?: string;
 	dragEnabled?: boolean;
+	/** How the photo fills the stage. `cover` fills edge to edge and crops. */
+	fit?: PhotoFit;
 	imageUrl: string;
 	onDragOffset?: (offsetX: number, offsetY: number) => void;
 	/** Full transform updates from the on-canvas handles (corners resize,
@@ -521,6 +557,7 @@ export const ProductPhotoPreview = ({
 	alt,
 	className,
 	dragEnabled = false,
+	fit = 'contain',
 	imageUrl,
 	onDragOffset,
 	onTransformChange,
@@ -565,13 +602,14 @@ export const ProductPhotoPreview = ({
 
 	const image = useMemo(
 		() =>
-			containedImageRect(
+			fittedImageRect(
 				container.width,
 				container.height,
 				imageSize.width,
-				imageSize.height
+				imageSize.height,
+				fit
 			),
-		[container, imageSize]
+		[container, imageSize, fit]
 	);
 	const activePixelZone = pixelZone(image, activeZone.previewBox);
 	const keyOf = (placement: PhotoPlacedDesign) =>
@@ -721,7 +759,7 @@ export const ProductPhotoPreview = ({
 				}
 				ref={imageRef}
 				src={shownUrl}
-				style={PRODUCT_IMAGE}
+				style={{ ...PRODUCT_IMAGE, objectFit: fit }}
 			/>
 			{tint && !recolored && image.width > 0 && (
 				<div

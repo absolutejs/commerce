@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   containedImageRect,
+  fittedImageRect,
   photoPlacementStyle,
   photoTintStyle,
   recolorGarmentPixels,
@@ -94,5 +95,17 @@ describe("product photo preview geometry", () => {
     const c = (16 * w + 16) * 4;
     expect(data[c]).toBeLessThan(60);
     expect(data[c + 2]).toBeGreaterThan(100);
+  });
+
+  test("cover fills the container and overflows the long axis", () => {
+    expect(fittedImageRect(1000, 500, 800, 800, "cover")).toEqual({
+      height: 1000,
+      left: 0,
+      top: -250,
+      width: 1000,
+    });
+    expect(fittedImageRect(1000, 500, 800, 800, "contain")).toEqual(
+      containedImageRect(1000, 500, 800, 800),
+    );
   });
 });
