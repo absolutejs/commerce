@@ -261,16 +261,25 @@ const garmentMask = (
 		mask[pixel] = Math.max(byDistance, byWarmth);
 	}
 
-	// Lossy photos are grainy: a blurred mask drops speckle and gives the
-	// garment a soft edge, then a smoothstep firms the interior back up.
-	const blurred = boxBlur(mask, width, height, 4);
-	for (let pixel = 0; pixel < blurred.length; pixel += 1) {
-		const value = blurred[pixel] ?? 0;
-		const t = Math.min(1, Math.max(0, (value - 0.3) / 0.4));
-		blurred[pixel] = t * t * (3 - 2 * t);
-	}
+	// Lossy photos are grainy: blur → firm → blur → firm straightens the
+	// silhouette (drops speckle and fills notches along shadowed edges) and
+	// leaves a soft two-to-three pixel anti-aliased rim.
+	const firm = (values: Float32Array, low: number, high: number) => {
+		for (let pixel = 0; pixel < values.length; pixel += 1) {
+			const t = Math.min(
+				1,
+				Math.max(0, ((values[pixel] ?? 0) - low) / (high - low))
+			);
+			values[pixel] = t * t * (3 - 2 * t);
+		}
 
-	return blurred;
+		return values;
+	};
+	const scale = Math.max(1, Math.round(Math.max(width, height) / 400));
+	const pass1 = firm(boxBlur(mask, width, height, 3 * scale), 0.35, 0.65);
+	const pass2 = firm(boxBlur(pass1, width, height, 2 * scale), 0.3, 0.7);
+
+	return firm(boxBlur(pass2, width, height, scale), 0.2, 0.8);
 };
 
 const boxBlur = (
