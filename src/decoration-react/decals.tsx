@@ -309,19 +309,60 @@ export const PlacementDecal = ({
 	);
 };
 
-// raycast disabled: three raycasts lines with a 1-world-unit threshold, so a
-// hittable outline makes the ENTIRE viewport "over the design" — every drag
-// grabbed the design (with the hit snapped onto the outline) and orbit died.
-export const ZoneOutline = ({ zone }: { zone: DecorationZone3D }) => (
-	<group position={zone.position} rotation={zone.rotation}>
-		<lineSegments position={[0, 0, 0.006]} raycast={() => null}>
-			<edgesGeometry
-				args={[new THREE.PlaneGeometry(zone.size[0], zone.size[1])]}
+// A dashed print-area frame projected onto the garment (a decal, like the
+// designs), so the guide bends with the fabric instead of floating as a flat
+// rectangle in front of it. raycast disabled so the frame never grabs drags.
+const zoneOutlineTexture = (() => {
+	let cached: THREE.CanvasTexture | null = null;
+
+	return () => {
+		if (cached) return cached;
+		const size = 512;
+		const canvas = document.createElement('canvas');
+		canvas.width = size;
+		canvas.height = size;
+		const context = canvas.getContext('2d');
+		if (!context) return null;
+		context.clearRect(0, 0, size, size);
+		context.fillStyle = 'rgba(255, 255, 255, 0.07)';
+		context.fillRect(0, 0, size, size);
+		context.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+		context.lineWidth = 6;
+		context.setLineDash([22, 14]);
+		context.strokeRect(6, 6, size - 12, size - 12);
+		context.strokeStyle = 'rgba(0, 0, 0, 0.35)';
+		context.lineWidth = 2;
+		context.setLineDash([]);
+		context.strokeRect(2, 2, size - 4, size - 4);
+		cached = new THREE.CanvasTexture(canvas);
+		cached.anisotropy = 4;
+
+		return cached;
+	};
+})();
+
+export const ZoneOutline = ({ zone }: { zone: DecorationZone3D }) => {
+	const texture = zoneOutlineTexture();
+	if (!texture) return null;
+
+	return (
+		<Decal
+			position={zone.position}
+			raycast={() => null}
+			rotation={zone.rotation}
+			scale={[zone.size[0], zone.size[1], PROJECT_DEPTH]}
+		>
+			<meshBasicMaterial
+				depthTest
+				depthWrite={false}
+				map={texture}
+				polygonOffset
+				polygonOffsetFactor={-12}
+				transparent
 			/>
-			<lineBasicMaterial color="#b5862f" depthTest={false} transparent />
-		</lineSegments>
-	</group>
-);
+		</Decal>
+	);
+};
 
 type DecorationProps = {
 	placements: PlacedDesign[];
