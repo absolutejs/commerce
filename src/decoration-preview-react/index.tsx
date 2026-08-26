@@ -580,13 +580,20 @@ export const recolorGarmentPixels = (
       // Keep the photo's own shading of the sweep (soft shadow under the
       // garment) by scaling the backdrop with the pixel's luminance
       // relative to a white sweep.
+      // Relative to the local sweep, not to white: a sweep pixel lands on
+      // the backdrop exactly (no faint rectangle on a vignetted photo) and
+      // only the garment's cast shadow stays darker.
       const shade = Math.min(
-        1.05,
+        1.02,
         luminance(
           data[index] ?? 0,
           data[index + 1] ?? 0,
           data[index + 2] ?? 0,
-        ) / 240,
+        ) /
+          Math.max(
+            1,
+            luminance(sweep(x, y, 0), sweep(x, y, 1), sweep(x, y, 2)),
+          ),
       );
       for (let channel = 0; channel < 3; channel += 1) {
         const value = data[index + channel] ?? 0;
