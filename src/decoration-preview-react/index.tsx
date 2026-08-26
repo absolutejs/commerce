@@ -446,6 +446,10 @@ type ProductPhotoPreviewProps = {
 	dragEnabled?: boolean;
 	imageUrl: string;
 	onDragOffset?: (offsetX: number, offsetY: number) => void;
+	/** Full transform updates from the on-canvas handles (corners resize,
+	 *  the top handle rotates) and drag-to-move. When given, a selection
+	 *  frame with handles renders around the active design. */
+	onTransformChange?: (transform: PlacementTransform) => void;
 	placements: PhotoPlacedDesign[];
 	showZone?: boolean;
 	style?: CSSProperties;
@@ -453,6 +457,34 @@ type ProductPhotoPreviewProps = {
 	 *  Same-origin photos are recolored by luminance; cross-origin photos
 	 *  fall back to a multiply layer masked by the photo's alpha. */
 	tint?: string | null;
+};
+
+type Gesture = {
+	kind: 'move' | 'scale' | 'rotate';
+	center: { x: number; y: number };
+	start: PlacementTransform;
+	startAngle: number;
+	startDistance: number;
+	startPoint: { x: number; y: number };
+};
+
+const HANDLE_CORNERS: Array<[number, number]> = [
+	[0, 0],
+	[1, 0],
+	[0, 1],
+	[1, 1]
+];
+const ROTATE_STEM = 22;
+const HANDLE: CSSProperties = {
+	background: '#fff',
+	border: '1.5px solid currentColor',
+	boxSizing: 'border-box',
+	height: 14,
+	pointerEvents: 'auto',
+	position: 'absolute',
+	touchAction: 'none',
+	transform: 'translate(-50%, -50%)',
+	width: 14
 };
 
 const BASE_STAGE: CSSProperties = {
@@ -482,6 +514,7 @@ export const ProductPhotoPreview = ({
 	dragEnabled = false,
 	imageUrl,
 	onDragOffset,
+	onTransformChange,
 	placements,
 	showZone = true,
 	style,
@@ -493,7 +526,7 @@ export const ProductPhotoPreview = ({
 	const shownUrl = recolored ?? imageUrl;
 	const [container, setContainer] = useState({ height: 0, width: 0 });
 	const [imageSize, setImageSize] = useState({ height: 0, width: 0 });
-	const [dragging, setDragging] = useState(false);
+	const [gesture, setGesture] = useState<Gesture | null>(null);
 
 	useEffect(() => {
 		const node = stageRef.current;
@@ -533,29 +566,117 @@ export const ProductPhotoPreview = ({
 	const activeDesign = placements.find(
 		(placement) => placement.zoneId === activeZone.id
 	);
+	const editable = dragEnabled && Boolean(activeDesign);
 
-	const move = (event: ReactPointerEvent<HTMLImageElement>) => {
-		if (!(dragging && activeDesign && onDragOffset)) return;
+	const localPoint = (event: { clientX: number; clientY: number }) => {
 		const bounds = stageRef.current?.getBoundingClientRect();
-		if (!bounds || activePixelZone.width <= 0 || activePixelZone.height <= 0)
-			return;
-		const localX = event.clientX - bounds.left;
-		const localY = event.clientY - bounds.top;
-		const offsetX =
-			((localX - activePixelZone.left - activePixelZone.width / 2) /
-				activePixelZone.width) *
-			activeZone.size[0];
-		const offsetY =
-			-(
-				(localY - activePixelZone.top - activePixelZone.height / 2) /
-				activePixelZone.height
-			) * activeZone.size[1];
-		const normalized = clampPlacementTransform(
-			activeZone,
-			activeDesign.aspect,
-			{ ...activeDesign.transform, offsetX, offsetY }
-		);
-		onDragOffset(normalized.offsetX, normalized.offsetY);
+
+		return {
+			x: event.clientX - (bounds?.left ?? 0),
+			y: event.clientY - (bounds?.top ?? 0)
+		};
+	};
+
+	const begin =
+		(kind: Gesture['kind']) => (event: ReactPointerEvent<HTMLElement>) => {
+			if (!editable || !activeDesign) return;
+			event.preventDefault();
+			event.stopPropagation();
+			const box = photoPlacementStyle(image, activeDesign);
+			const center = { x: Number(box.left), y: Number(box.top) };
+			const point = localPoint(event);
+			setGesture({
+				center,
+				kind,
+				start: activeDesign.transform,
+				startAngle: Math.atan2(point.y - center.y, point.x - center.x),
+				startDistance: Math.hypot(
+					point.x - center.x,
+					point.y - center.y
+				),
+				startPoint: point
+			});
+		};
+
+	// Window-level listeners so a fast drag that leaves the handle (or the
+	// stage) keeps tracking until the pointer is released.
+	useEffect(() => {
+		if (!gesture || !activeDesign) return undefined;
+		const emit = (transform: PlacementTransform) => {
+			const normalized = clampPlacementTransform(
+				activeZone,
+				activeDesign.aspect,
+				transform
+			);
+			if (onTransformChange) onTransformChange(normalized);
+			else onDragOffset?.(normalized.offsetX, normalized.offsetY);
+		};
+		const move = (event: PointerEvent) => {
+			const point = localPoint(event);
+			if (gesture.kind === 'move') {
+				if (activePixelZone.width <= 0 || activePixelZone.height <= 0)
+					return;
+				emit({
+					...gesture.start,
+					offsetX:
+						gesture.start.offsetX +
+						((point.x - gesture.startPoint.x) /
+							activePixelZone.width) *
+							activeZone.size[0],
+					offsetY:
+						gesture.start.offsetY -
+						((point.y - gesture.startPoint.y) /
+							activePixelZone.height) *
+							activeZone.size[1]
+				});
+			} else if (gesture.kind === 'scale') {
+				const distance = Math.hypot(
+					point.x - gesture.center.x,
+					point.y - gesture.center.y
+				);
+				const ratio =
+					gesture.startDistance > 0
+						? distance / gesture.startDistance
+						: 1;
+				emit({ ...gesture.start, scale: gesture.start.scale * ratio });
+			} else {
+				const angle = Math.atan2(
+					point.y - gesture.center.y,
+					point.x - gesture.center.x
+				);
+				emit({
+					...gesture.start,
+					rotation:
+						gesture.start.rotation + (angle - gesture.startAngle)
+				});
+			}
+		};
+		const end = () => setGesture(null);
+		window.addEventListener('pointermove', move);
+		window.addEventListener('pointerup', end);
+		window.addEventListener('pointercancel', end);
+
+		return () => {
+			window.removeEventListener('pointermove', move);
+			window.removeEventListener('pointerup', end);
+			window.removeEventListener('pointercancel', end);
+		};
+	}, [
+		gesture,
+		activeDesign,
+		activePixelZone,
+		activeZone,
+		onDragOffset,
+		onTransformChange
+	]);
+
+	const frameStyle = activeDesign
+		? photoPlacementStyle(image, activeDesign)
+		: null;
+	const cursorFor = (kind: Gesture['kind']) => {
+		if (gesture?.kind === kind) return 'grabbing';
+
+		return kind === 'rotate' ? 'grab' : 'nwse-resize';
 	};
 
 	return (
@@ -607,43 +728,73 @@ export const ProductPhotoPreview = ({
 					data-decoration-art={design.zoneId}
 					draggable={false}
 					key={design.zoneId}
-					onPointerCancel={() => setDragging(false)}
-					onPointerDown={(event) => {
-						if (
-							!dragEnabled ||
-							design.zoneId !== activeZone.id ||
-							!onDragOffset
-						)
-							return;
-						try {
-							event.currentTarget.setPointerCapture(event.pointerId);
-						} catch {
-							// Synthetic or already-released pointers can't be
-							// captured; dragging still tracks moves on the image.
-						}
-						setDragging(true);
-					}}
-					onPointerMove={move}
-					onPointerUp={(event) => {
-						setDragging(false);
-						if (event.currentTarget.hasPointerCapture(event.pointerId))
-							event.currentTarget.releasePointerCapture(
-								event.pointerId
-							);
-					}}
+					onPointerDown={
+						design.zoneId === activeZone.id
+							? begin('move')
+							: undefined
+					}
 					src={design.src}
 					style={{
 						...photoPlacementStyle(image, design),
 						cursor:
-							dragEnabled && design.zoneId === activeZone.id
-								? dragging
+							editable && design.zoneId === activeZone.id
+								? gesture?.kind === 'move'
 									? 'grabbing'
 									: 'move'
 								: 'default',
-						objectFit: 'contain'
+						objectFit: 'contain',
+						touchAction: 'none'
 					}}
 				/>
 			))}
+			{editable && frameStyle && image.width > 0 && (
+				<div
+					aria-hidden
+					data-decoration-frame={activeZone.id}
+					style={{
+						...frameStyle,
+						outline: '1.5px solid currentColor',
+						outlineOffset: 2,
+						pointerEvents: 'none'
+					}}
+				>
+					{HANDLE_CORNERS.map(([left, top]) => (
+						<span
+							data-decoration-handle="scale"
+							key={`${left}-${top}`}
+							onPointerDown={begin('scale')}
+							style={{
+								...HANDLE,
+								cursor: cursorFor('scale'),
+								left: `${left * 100}%`,
+								top: `${top * 100}%`
+							}}
+						/>
+					))}
+					<span
+						style={{
+							background: 'currentColor',
+							height: ROTATE_STEM,
+							left: '50%',
+							pointerEvents: 'none',
+							position: 'absolute',
+							top: -ROTATE_STEM - 2,
+							width: 1.5
+						}}
+					/>
+					<span
+						data-decoration-handle="rotate"
+						onPointerDown={begin('rotate')}
+						style={{
+							...HANDLE,
+							borderRadius: '50%',
+							cursor: cursorFor('rotate'),
+							left: '50%',
+							top: -ROTATE_STEM - 2
+						}}
+					/>
+				</div>
+			)}
 		</div>
 	);
 };
