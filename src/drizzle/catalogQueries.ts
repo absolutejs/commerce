@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
+import type { ProductMedia } from "../core/catalog";
 import type { CommerceDb } from "./queries";
 import {
   commerceCatalogCollectionListings,
@@ -396,4 +397,36 @@ export const offerCatalogProduct = async (
   });
 
   return { created: true as const, listing };
+};
+
+/**
+ * Merge supplier-provided media into a catalog product. Existing entries
+ * from the same source with the same color × view are replaced (a re-sync
+ * refreshes URLs); media from other sources and the shop's own uploads are
+ * kept. Returns the merged list.
+ */
+export const mergeProductMedia = async (
+  db: CommerceDb,
+  input: { productId: string; media: ProductMedia[]; sourceId: string },
+): Promise<ProductMedia[]> => {
+  const [row] = await db
+    .select({ media: commerceProducts.media })
+    .from(commerceProducts)
+    .where(eq(commerceProducts.id, input.productId))
+    .limit(1)
+    .execute();
+  if (!row) throw new Error(`Catalog product ${input.productId} not found`);
+  const keyOf = (item: ProductMedia) =>
+    `${(item.color ?? "").toLowerCase()}|${item.view ?? ""}`;
+  const incoming = new Set(input.media.map(keyOf));
+  const kept = (row.media ?? []).filter(
+    (item) => !(item.sourceId === input.sourceId && incoming.has(keyOf(item))),
+  );
+  const merged = [...kept, ...input.media];
+  await db
+    .update(commerceProducts)
+    .set({ media: merged, updated_at: new Date() })
+    .where(eq(commerceProducts.id, input.productId));
+
+  return merged;
 };
