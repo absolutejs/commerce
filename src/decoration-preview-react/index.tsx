@@ -689,6 +689,59 @@ export const recolorGarmentPixels = (
   }
 };
 
+/** Cut the garment out of a studio photo in place: alpha becomes the
+ *  garment mask and edge pixels are de-fringed against the local sweep, so
+ *  the result sits on any backdrop. Meant for a one-time build step over
+ *  demo photos — the runtime then needs no masking at all (a transparent
+ *  photo's alpha is already the mask for recoloring). */
+export const cutoutGarmentPixels = (
+  data: Uint8ClampedArray,
+  size: GarmentMaskOptions,
+) => {
+  const mask = garmentMask(data, size);
+  if (!mask) return false;
+  const sweep = sweepField(data, size.width, size.height);
+  const weight = (pixel: number) =>
+    (data[pixel * 4 + 3] ?? 0) < 16 ? 0 : (mask[pixel] ?? 0);
+  const cap = medianColor(data, weight);
+  const capLum =
+    luminance(cap[0], cap[1], cap[2]) *
+    (luminance(cap[0], cap[1], cap[2]) < 96 ? 1.35 : 1.12);
+  for (let index = 0; index < data.length; index += 4) {
+    const pixel = index / 4;
+    const rawKeep = mask[pixel] ?? 0;
+    const keep = rawKeep < 0.35 ? 0 : rawKeep;
+    if (keep === 0) {
+      data[index + 3] = 0;
+      continue;
+    }
+    const x = pixel % size.width;
+    const y = (pixel - x) / size.width;
+    const estimate: [number, number, number] = [0, 0, 0];
+    for (let channel = 0; channel < 3; channel += 1) {
+      const value = data[index + channel] ?? 0;
+      estimate[channel] =
+        keep < 0.98
+          ? Math.min(
+              255,
+              Math.max(0, (value - sweep(x, y, channel) * (1 - keep)) / keep),
+            )
+          : value;
+    }
+    const estimateLum = luminance(estimate[0], estimate[1], estimate[2]);
+    const scale =
+      keep < 0.98 && estimateLum > capLum
+        ? capLum / Math.max(1, estimateLum)
+        : 1;
+    data[index] = Math.round((estimate[0] ?? 0) * scale);
+    data[index + 1] = Math.round((estimate[1] ?? 0) * scale);
+    data[index + 2] = Math.round((estimate[2] ?? 0) * scale);
+    data[index + 3] = Math.round(keep * 255);
+  }
+
+  return true;
+};
+
 const recolorCache = new Map<string, string>();
 const recolorFailed = new Set<string>();
 const recolorPending = new Map<string, Promise<string | null>>();
