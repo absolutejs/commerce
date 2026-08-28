@@ -38,7 +38,11 @@ export type CheckoutShipping =
       countries: string[];
       flatAmountCents?: number;
       label?: string;
-    };
+    }
+  /** Charge freight without asking where to: the merchant already has the
+   *  address (a local delivery run, a standing B2B ship-to, a quote), so the
+   *  payment page shows the charge and skips the address form. */
+  | { mode: "charge"; flatAmountCents: number; label?: string };
 
 export type CreateCheckoutInput = {
   /** Stable host-owned retry identity forwarded to capable providers. */
