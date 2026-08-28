@@ -94,6 +94,20 @@ export type CreateCheckoutInput = {
   recurringInterval?: "day" | "week" | "month" | "year";
 };
 
+/**
+ * What a total is made of. Every figure is in minor units and already
+ * reflects the session as charged, so `subtotalCents - discountCents +
+ * shippingCents + taxCents` is the amount collected — a receipt a host can
+ * show a customer without asking the provider again.
+ */
+export type CheckoutTotals = {
+  /** The goods alone, before anything below. */
+  subtotalCents: number;
+  discountCents: number;
+  shippingCents: number;
+  taxCents: number;
+};
+
 export type CheckoutResult = {
   id: string;
   /** Set for embedded checkout. */
@@ -214,6 +228,9 @@ export type CheckoutSession = {
   status: string | null;
   paymentStatus: string | null;
   amountTotalCents: number | null;
+  /** The parts of that total, so a host can show a receipt without asking
+   *  the provider a second time. */
+  totals: CheckoutTotals;
   currency: string | null;
   customerEmail: string | null;
   customerName: string | null;

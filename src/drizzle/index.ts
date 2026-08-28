@@ -1144,6 +1144,13 @@ export const commerceDiscounts = pgTable("discounts", {
 // idempotently. `status` is paid | failed | shipped | rejected | refunded.
 export const commerceOrders = pgTable("orders", {
   amount_total: integer(),
+  /** What `amount_total` is made of, as charged: goods, minus discount, plus
+   *  shipping and tax. Written from the payment session so a receipt never
+   *  has to be re-derived from a rate card that has since moved. */
+  subtotal_cents: integer(),
+  discount_cents: integer(),
+  shipping_cents: integer(),
+  tax_cents: integer(),
   artwork_urls: portableJsonb().$type<string[]>().default([]),
   assignee: varchar({ length: 120 }),
   carrier: varchar({ length: 80 }),
