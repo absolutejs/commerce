@@ -44,6 +44,25 @@ export type CheckoutShipping =
    *  payment page shows the charge and skips the address form. */
   | { mode: "charge"; flatAmountCents: number; label?: string };
 
+/**
+ * Where the sale actually lands, when the merchant already knows and the
+ * payment page will not be asking: a local delivery run, a standing ship-to,
+ * an address gathered on a quote, or the counter an in-store pickup happens
+ * over. Providers that calculate tax treat it as the place of supply instead
+ * of falling back to whatever billing address the payer types.
+ */
+export type CheckoutTaxAddress = {
+  city?: string;
+  /** ISO 3166-1 alpha-2. */
+  country: string;
+  line1?: string;
+  line2?: string;
+  /** The name on the address, when the provider records one. */
+  name?: string;
+  postalCode?: string;
+  state?: string;
+};
+
 export type CreateCheckoutInput = {
   /** Stable host-owned retry identity forwarded to capable providers. */
   idempotencyKey?: string;
@@ -64,6 +83,11 @@ export type CreateCheckoutInput = {
   couponId?: string;
   /** Calculate tax automatically when the provider supports it. */
   automaticTax?: boolean;
+  /** The place of supply for a page that collects no address of its own.
+   *  Needs `automaticTax` — there is nothing to source without it — and is
+   *  ignored when `shipping.mode` is 'collect', because an address the payer
+   *  types in front of the provider is the better answer. */
+  taxAddress?: CheckoutTaxAddress;
   /** One-time payment (default) or a recurring subscription. */
   mode?: "payment" | "subscription";
   /** Billing interval when `mode` is 'subscription'. */
