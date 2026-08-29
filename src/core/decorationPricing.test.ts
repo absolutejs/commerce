@@ -30,6 +30,52 @@ describe("decoration pricing", () => {
     expect(quote.rushCents).toBe(0);
   });
 
+  it("charges a design's setup once, on the line that carries it", () => {
+    const first = priceDecoration(
+      {
+        blankCents: 2200,
+        method: "embroidery",
+        quantity: 12,
+        stitchCount: 8000,
+      },
+      rates,
+    );
+    // The same design on a second garment: the file is already digitized.
+    const second = priceDecoration(
+      {
+        blankCents: 3400,
+        method: "embroidery",
+        quantity: 6,
+        setupPaid: true,
+        stitchCount: 8000,
+      },
+      rates,
+    );
+    expect(first.setupCents).toBe(1500);
+    expect(second.setupCents).toBe(0);
+    expect(second.subtotalCents).toBe(second.perPieceCents * 6);
+    expect(
+      second.breakdown.some((line) => /Digitizing/u.test(line.label)),
+    ).toBe(false);
+  });
+
+  it("keeps rush honest on a line whose setup was already paid", () => {
+    const quote = priceDecoration(
+      {
+        method: "screen-print",
+        colors: 2,
+        quantity: 10,
+        rush: true,
+        setupPaid: true,
+      },
+      rates,
+    );
+    // Rush follows the subtotal, and the subtotal no longer carries screens.
+    expect(quote.setupCents).toBe(0);
+    expect(quote.subtotalCents).toBe(quote.perPieceCents * 10);
+    expect(quote.rushCents).toBe(Math.round(quote.subtotalCents * 0.25));
+  });
+
   it("applies the embroidery minimum on tiny designs", () => {
     const quote = priceDecoration(
       { method: "embroidery", quantity: 1, stitchCount: 1000 },

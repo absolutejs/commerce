@@ -43,6 +43,13 @@ export type DecorationJob = {
   rush?: boolean;
   /** Whole-unit volume breaks (garment + decoration), applied before rush. */
   quantityBreaks?: QuantityBreak[];
+  /**
+   * This design's setup was already charged on another line of the same job.
+   * Digitizing a file, burning screens or cutting a template happens once per
+   * design, however many garments it goes on — a quote that charges it per
+   * line is overcharging for the same work.
+   */
+  setupPaid?: boolean;
 };
 
 export type DecorationLine = { amountCents: number; label: string };
@@ -87,6 +94,7 @@ const decorationPerPieceCents = (
 
 /** One-time setup cost for the whole job. */
 const setupCents = (job: DecorationJob, rates: DecorationRates): number => {
+  if (job.setupPaid) return 0;
   const locations = Math.max(1, job.locations ?? 1);
   if (job.method === "embroidery") return rates.digitizingFeeCents * locations;
   if (job.method === "screen-print")
@@ -99,8 +107,9 @@ const setupCents = (job: DecorationJob, rates: DecorationRates): number => {
 
 /**
  * Price a decoration job the way a shop quotes it. Volume breaks discount the
- * decorated unit (blank + decoration); setup is charged once; rush is a
- * percentage of the discounted subtotal so it scales with the job.
+ * decorated unit (blank + decoration); setup is charged once per design (pass
+ * `setupPaid` on the later lines that share it); rush is a percentage of the
+ * discounted subtotal so it scales with the job.
  */
 export const priceDecoration = (
   job: DecorationJob,
