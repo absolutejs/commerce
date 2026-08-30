@@ -128,4 +128,31 @@ describe("decoration pricing", () => {
     );
     expect(two.perPieceCents).toBe(one.perPieceCents * 2);
   });
+  it("sublimation prices like the other flat methods, and reads as itself", () => {
+    const quote = priceDecoration(
+      { method: "sublimation", quantity: 24 },
+      {
+        ...rates,
+        flatPerPieceCents: { ...rates.flatPerPieceCents, sublimation: 650 },
+      },
+    );
+    expect(quote.perPieceCents).toBe(650);
+    expect(quote.subtotalCents).toBe(650 * 24);
+    expect(quote.breakdown.some((line) => line.label === "Sublimation")).toBe(
+      true,
+    );
+  });
+
+  it("a flat method reads in the shop's words, not SHOUTED", () => {
+    const quote = priceDecoration(
+      { method: "vinyl", quantity: 10 },
+      {
+        ...rates,
+        flatPerPieceCents: { ...rates.flatPerPieceCents, vinyl: 600 },
+      },
+    );
+    expect(quote.breakdown.some((line) => line.label === "Vinyl / HTV")).toBe(
+      true,
+    );
+  });
 });

@@ -20,4 +20,5 @@ export * from "./core/pricing";
 export * from "./core/productionPackage";
 export * from "./core/shipping";
 export * from "./core/storefront";
+export * from "./core/terminal";
 export * from "./core/threads";

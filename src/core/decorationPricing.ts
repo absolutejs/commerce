@@ -1,13 +1,25 @@
 // Decoration pricing for custom-apparel shops: embroidery priced by stitch
-// count, screen-print by colors × pieces, transfer/DTG/vinyl by a flat run
-// rate — the numbers an embroidery or print shop actually quotes from. All
-// money is in integer cents; the caller supplies the shop's own rate card.
+// count, screen-print by colors × pieces, and the transfer methods — DTG,
+// DTF, vinyl, sublimation — by a flat run rate. These are the numbers an
+// embroidery or print shop actually quotes from. All money is in integer
+// cents; the caller supplies the shop's own rate card.
 
 import type { QuantityBreak } from "./pricing";
 import { quantityDiscount } from "./pricing";
 
 export type DecorationMethod =
-  "embroidery" | "screen-print" | "dtg" | "dtf" | "vinyl";
+  "embroidery" | "screen-print" | "dtg" | "dtf" | "vinyl" | "sublimation";
+
+/** How a method reads on a quote or a work order. `dtf.toUpperCase()` gives
+ *  "DTF", but it also gives "VINYL", which nobody writes. */
+const METHOD_WORDS: Record<DecorationMethod, string> = {
+  dtf: "DTF transfer",
+  dtg: "DTG print",
+  embroidery: "Embroidery",
+  "screen-print": "Screen print",
+  sublimation: "Sublimation",
+  vinyl: "Vinyl / HTV",
+};
 
 /** A shop's editable rate card. Every field is integer cents unless noted. */
 export type DecorationRates = {
@@ -21,7 +33,8 @@ export type DecorationRates = {
   screenSetupPerColorCents: number;
   /** Screen-print: run cost per color, per piece. */
   screenPerColorPerPieceCents: number;
-  /** Flat run cost per piece for methods priced per placement (dtg/dtf/vinyl). */
+  /** Flat run cost per piece for the per-placement methods (dtg, dtf, vinyl,
+   *  sublimation). */
   flatPerPieceCents: Partial<Record<DecorationMethod, number>>;
   /** One-time setup for those flat methods (cut file, transfer gang, etc.). */
   flatSetupCents: Partial<Record<DecorationMethod, number>>;
@@ -138,7 +151,7 @@ export const priceDecoration = (
         ? `Embroidery — ${(job.stitchCount ?? 0).toLocaleString()} stitches`
         : job.method === "screen-print"
           ? `Screen print — ${Math.max(1, job.colors ?? 1)} color${(job.colors ?? 1) === 1 ? "" : "s"}`
-          : `${job.method.toUpperCase()} print`,
+          : METHOD_WORDS[job.method],
   });
   if (discount > 0)
     breakdown.push({
