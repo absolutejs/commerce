@@ -6,6 +6,7 @@ export * from "./core/analytics";
 export * from "./core/aftercare";
 export * from "./core/cart";
 export * from "./core/catalog";
+export * from "./core/checkoutAttempts";
 export * from "./core/decoration";
 export * from "./core/decorationDefaults";
 export * from "./core/discounts";

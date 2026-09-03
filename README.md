@@ -179,6 +179,23 @@ reporting failure after a webhook confirmed success. Evidence intentionally
 excludes raw webhook payloads, credentials, card data, and customer data; hosts
 keep those in their own protected stores.
 
+### Checkout attempt funnels
+
+`CheckoutAttemptEvidence` is the provider-neutral lifecycle record for every
+way money can move: interactive checkout, saved-card renewal, plan changes,
+payment-method replacement, invoices, refunds, voids, and chargebacks. Append
+constrained observations from the browser, host, provider API, webhook,
+reconciliation, scheduler, or admin surface, then use
+`summarizeCheckoutAttempt()` for one journey and `summarizeCheckoutFunnel()`
+for conversion and loss counts. Cancellations and abandonment remain valuable
+commerce outcomes without becoming application errors.
+
+The contract deliberately has no general metadata or raw-payload field. Store
+only host-owned correlation, amount/currency, product key, lifecycle stage,
+method, outcome, and a constrained failure code. Payment tokens, wallet
+payloads, card details, addresses, provider responses, and customer data stay
+outside this analytics projection.
+
 The `./react` export includes a reusable `StorefrontRenderer` and listing/card
 controls, while `./client` includes a storefront-scoped persistent cart store.
 Both remain provider-neutral and can be styled by the host without replacing
