@@ -7,16 +7,29 @@
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
-      "@absolutejs/commerce/drizzle": ["src/drizzle/index.ts"]
+      "@absolutejs/commerce/drizzle": [
+        "src/drizzle/index.ts"
+      ]
     },
     "outDir": "dist",
     "strict": true,
     "declaration": true,
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
-    "lib": ["DOM", "ESNext"],
+    "lib": [
+      "DOM",
+      "ESNext"
+    ],
     "jsx": "react-jsx"
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/**/*.test.tsx"]
+  "include": [
+    "src/**/*",
+    "changelog/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx"
+  ]
 }
