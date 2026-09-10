@@ -190,6 +190,15 @@ reconciliation, scheduler, or admin surface, then use
 for conversion and loss counts. Cancellations and abandonment remain valuable
 commerce outcomes without becoming application errors.
 
+`canAdvanceCheckoutAttempt()` gives host projections the same precedence rules:
+confirmed terminal outcomes survive late browser progress, while an authoritative
+success can resolve an earlier failure. `checkoutAttemptStageLabel()` and
+`CHECKOUT_ATTEMPT_STAGES` share stage terminology across operator screens.
+`summarizeCheckoutStages()` counts observed stages once per attempt without
+inventing skipped steps. Group retries with `summarizeCheckoutJourneys()` using
+a host-owned `journeyKey`; keep acquisition and each renewal cycle separate.
+Filter flows before computing acquisition conversion rates.
+
 The contract deliberately has no general metadata or raw-payload field. Store
 only host-owned correlation, amount/currency, product key, lifecycle stage,
 method, outcome, and a constrained failure code. Payment tokens, wallet

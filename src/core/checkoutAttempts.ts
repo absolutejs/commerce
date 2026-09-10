@@ -120,11 +120,11 @@ export const summarizeCheckoutAttempt = (
     .map((item) => ({ ...item, at: dateText(item.at) }))
     .sort((left, right) => left.at.localeCompare(right.at));
   const first = ordered[0];
-  const latest = ordered.at(-1);
+  const latest = ordered.reduce((current, incoming) =>
+    canAdvanceCheckoutAttempt(current, incoming) ? incoming : current,
+  );
   if (!first || !latest) return null;
-  const completed = [...ordered]
-    .reverse()
-    .find((item) => terminalOutcomes.has(item.outcome));
+  const completed = terminalOutcomes.has(latest.outcome) ? latest : null;
 
   return {
     amountCents: latest.amountCents,
@@ -175,4 +175,140 @@ export const summarizeCheckoutFunnel = (
     conversionRate: attempts.length === 0 ? 0 : completed / attempts.length,
     lost,
   };
+};
+
+/** Shared stages describe recorded evidence, never assumed intermediate steps. */
+export const CHECKOUT_ATTEMPT_STAGES = [
+  "intent_created",
+  "method_selected",
+  "authorization_started",
+  "tokenized",
+  "provider_submitted",
+  "provider_approved",
+  "provider_declined",
+] as const;
+
+const stageNames: Record<string, string> = {
+  intent_created: "Checkout prepared",
+  method_selected: "Payment method selected",
+  authorization_started: "Authorization started",
+  authorization_not_completed: "Authorization not completed",
+  tokenized: "Payment details secured",
+  provider_submitted: "Sent for processing",
+  provider_approved: "Payment approved",
+  provider_declined: "Payment declined",
+  unknown: "Payment result not confirmed",
+};
+export const checkoutAttemptStageLabel = (stage: string): string =>
+  stageNames[stage] ?? stage.replaceAll("_", " ");
+
+type Observation = Pick<
+  CheckoutAttemptEvidence,
+  "at" | "source" | "outcome" | "stage"
+>;
+const confirmedTerminal = (event: Observation) =>
+  event.source !== "browser" &&
+  terminalOutcomes.has(event.outcome) &&
+  event.outcome !== "abandoned";
+
+/** Provider/host terminal evidence cannot be undone by a late browser event. */
+export const canAdvanceCheckoutAttempt = (
+  current: Observation,
+  incoming: Observation,
+): boolean => {
+  if (confirmedTerminal(current)) {
+    if (!confirmedTerminal(incoming)) return false;
+    if (current.outcome === "completed" && incoming.outcome !== "completed")
+      return false;
+  }
+  if (confirmedTerminal(incoming) && !confirmedTerminal(current)) return true;
+  if (
+    incoming.outcome === "completed" &&
+    confirmedTerminal(incoming) &&
+    current.outcome !== "completed"
+  )
+    return true;
+  const difference =
+    new Date(incoming.at).getTime() - new Date(current.at).getTime();
+  if (difference !== 0) return difference > 0;
+  if (current.source !== "browser" && incoming.source === "browser")
+    return false;
+  return (
+    CHECKOUT_ATTEMPT_STAGES.indexOf(
+      incoming.stage as (typeof CHECKOUT_ATTEMPT_STAGES)[number],
+    ) >=
+    CHECKOUT_ATTEMPT_STAGES.indexOf(
+      current.stage as (typeof CHECKOUT_ATTEMPT_STAGES)[number],
+    )
+  );
+};
+
+export const checkoutAttemptEvidenceKind = (
+  outcome: CheckoutAttemptOutcome,
+): "inferred" | "recorded" =>
+  outcome === "abandoned" ? "inferred" : "recorded";
+
+/** A host chooses the grouping key (e.g. account + acquisition, or invoice cycle). */
+export const summarizeCheckoutJourneys = <
+  T extends CheckoutAttemptSummary & { journeyKey: string },
+>(
+  attempts: T[],
+) => {
+  const groups = new Map<string, T[]>();
+  for (const attempt of attempts) {
+    const group = groups.get(attempt.journeyKey) ?? [];
+    group.push(attempt);
+    groups.set(attempt.journeyKey, group);
+  }
+  return [...groups.entries()].map(([journeyKey, group]) => {
+    group.sort((a, b) => a.latestAt.localeCompare(b.latestAt));
+    const latest = group.at(-1)!;
+    const completed = group.findLast(
+      (attempt) => attempt.outcome === "completed",
+    );
+    return {
+      journeyKey,
+      attemptCount: group.length,
+      attemptIds: group.map((attempt) => attempt.attemptId),
+      latest: completed ?? latest,
+      recovered:
+        !!completed &&
+        group.some(
+          (attempt) =>
+            attempt.outcome !== "completed" &&
+            attempt.firstAt < completed.latestAt,
+        ),
+    };
+  });
+};
+
+/** Counts observed stages once per attempt. Does not infer skipped stages. */
+export const summarizeCheckoutStages = (
+  evidence: CheckoutAttemptEvidence[],
+) => {
+  const groups = new Map<string, CheckoutAttemptEvidence[]>();
+  for (const event of evidence) {
+    const group = groups.get(event.attemptId) ?? [];
+    group.push(event);
+    groups.set(event.attemptId, group);
+  }
+  const stages: Record<string, { reached: number; stopped: number }> = {};
+  for (const group of groups.values()) {
+    for (const stage of new Set(group.map((event) => event.stage))) {
+      stages[stage] ??= { reached: 0, stopped: 0 };
+      stages[stage].reached++;
+    }
+    const summary = summarizeCheckoutAttempt(group);
+    if (
+      summary &&
+      ["abandoned", "declined", "canceled", "failed"].includes(summary.outcome)
+    ) {
+      const stoppedStage = (stages[summary.latestStage] ??= {
+        reached: 0,
+        stopped: 0,
+      });
+      stoppedStage.stopped++;
+    }
+  }
+  return stages;
 };
