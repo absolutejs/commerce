@@ -5,6 +5,16 @@
 //
 // drizzle-orm is a peer dependency — the consuming app provides it.
 
+/*
+ * Every timestamp here carries its zone.
+ *
+ * These are instants. A driver writes a Date as its UTC wall clock and reads a
+ * naive value back as local, so a process outside UTC gets them back shifted
+ * by its own offset. Postgres compares them correctly either way, which is why
+ * this stayed invisible -- but `sync_lease_expires_at` is read into JavaScript
+ * and compared against the clock, and a lease that reads hours late is a stuck
+ * sync nobody reclaims.
+ */
 import {
   boolean,
   customType,
@@ -79,7 +89,7 @@ export type CommerceShippingAddress = {
 
 // Shared design library — customers can publish an uploaded design for reuse.
 export const commerceDesigns = pgTable("designs", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   image_url: varchar({ length: 600 }).notNull(),
   name: varchar({ length: 120 }).notNull(),
@@ -92,7 +102,7 @@ export const commerceCompanies = pgTable("companies", {
   brand_kit: portableJsonb().$type<BrandKit>(),
   brand_logos: portableJsonb().$type<string[]>().default([]),
   contact_email: varchar({ length: 320 }),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   name: varchar({ length: 200 }).notNull(),
   net_terms: integer().notNull().default(0),
@@ -108,7 +118,7 @@ export const commerceCatalogs = pgTable(
   "commerce_catalogs",
   {
     brand_kit: portableJsonb().$type<BrandKit>(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     currency: varchar({ length: 10 }).notNull().default("USD"),
     id: uuid().defaultRandom().primaryKey(),
     locale: varchar({ length: 20 }).notNull().default("en-US"),
@@ -117,7 +127,7 @@ export const commerceCatalogs = pgTable(
     settings: portableJsonb().$type<Record<string, unknown>>().default({}),
     slug: varchar({ length: 120 }).notNull(),
     status: varchar({ length: 20 }).notNull().default("draft"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_catalogs_owner_slug_idx").on(
@@ -137,7 +147,7 @@ export const commerceCatalogSources = pgTable("commerce_catalog_sources", {
   cursor: varchar({ length: 500 }),
   id: varchar({ length: 120 }).primaryKey(),
   last_error: text(),
-  last_synced_at: timestamp(),
+  last_synced_at: timestamp({ withTimezone: true }),
   name: varchar({ length: 200 }).notNull(),
   owner_key: varchar({ length: 160 }),
   products_synced: integer().notNull().default(0),
@@ -145,16 +155,16 @@ export const commerceCatalogSources = pgTable("commerce_catalog_sources", {
   settings: portableJsonb().$type<Record<string, unknown>>().default({}),
   status: varchar({ length: 20 }).notNull().default("active"),
   sync_generation: varchar({ length: 64 }),
-  sync_lease_expires_at: timestamp(),
-  sync_started_at: timestamp(),
+  sync_lease_expires_at: timestamp({ withTimezone: true }),
+  sync_started_at: timestamp({ withTimezone: true }),
   variants_synced: integer().notNull().default(0),
-  updated_at: timestamp().notNull().defaultNow(),
+  updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
 export const commerceCatalogTaxa = pgTable(
   "commerce_catalog_taxa",
   {
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     external_id: varchar({ length: 240 }).notNull(),
     id: varchar({ length: 160 }).primaryKey(),
     kind: varchar({ length: 32 }).notNull(),
@@ -163,7 +173,7 @@ export const commerceCatalogTaxa = pgTable(
     parent_external_id: varchar({ length: 240 }),
     slug: varchar({ length: 240 }).notNull(),
     source_id: varchar({ length: 120 }).notNull(),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_catalog_taxa_source_external_idx").on(
@@ -180,14 +190,14 @@ export const commerceCatalogTaxa = pgTable(
 export const commerceCatalogSyncRuns = pgTable(
   "commerce_catalog_sync_runs",
   {
-    completed_at: timestamp(),
+    completed_at: timestamp({ withTimezone: true }),
     cursor: varchar({ length: 500 }),
     error_code: varchar({ length: 120 }),
     generation: varchar({ length: 64 }).notNull(),
     id: uuid().defaultRandom().primaryKey(),
     products_synced: integer().notNull().default(0),
     source_id: varchar({ length: 120 }).notNull(),
-    started_at: timestamp().notNull().defaultNow(),
+    started_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     status: varchar({ length: 20 }).notNull().default("running"),
     trigger: varchar({ length: 20 }).notNull().default("scheduled"),
     variants_synced: integer().notNull().default(0),
@@ -210,12 +220,12 @@ export const commerceProducts = pgTable(
       .default({}),
     brand: varchar({ length: 160 }).notNull(),
     category: varchar({ length: 160 }).notNull(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     decoration_areas: portableJsonb().$type<DecorationArea[]>().default([]),
     description: text().notNull().default(""),
     external_id: varchar({ length: 200 }),
     id: varchar({ length: 160 }).primaryKey(),
-    last_seen_at: timestamp(),
+    last_seen_at: timestamp({ withTimezone: true }),
     media: portableJsonb().$type<ProductMedia[]>().default([]),
     metadata: portableJsonb().$type<Record<string, unknown>>().default({}),
     option_names: portableJsonb().$type<string[]>().default([]),
@@ -227,7 +237,7 @@ export const commerceProducts = pgTable(
     sync_generation: varchar({ length: 64 }),
     tags: portableJsonb().$type<string[]>().default([]),
     title: varchar({ length: 240 }).notNull(),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_products_source_external_idx").on(
@@ -253,7 +263,7 @@ export const commerceProductVariants = pgTable(
     barcode: varchar({ length: 120 }),
     compare_at_cents: integer(),
     cost_cents: integer(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     currency: varchar({ length: 10 }).notNull().default("USD"),
     external_id: varchar({ length: 200 }),
     id: varchar({ length: 200 }).primaryKey(),
@@ -261,7 +271,7 @@ export const commerceProductVariants = pgTable(
     inventory_quantity: integer(),
     media: portableJsonb().$type<ProductMedia[]>().default([]),
     metadata: portableJsonb().$type<Record<string, unknown>>().default({}),
-    last_seen_at: timestamp(),
+    last_seen_at: timestamp({ withTimezone: true }),
     options: portableJsonb().$type<Record<string, string>>().notNull(),
     price_cents: integer(),
     product_id: varchar({ length: 160 }).notNull(),
@@ -269,7 +279,7 @@ export const commerceProductVariants = pgTable(
     source_id: varchar({ length: 120 }),
     supplier_sku: varchar({ length: 200 }),
     sync_generation: varchar({ length: 64 }),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_variants_product_external_idx").on(
@@ -295,7 +305,7 @@ export const commerceCatalogListings = pgTable(
     base_price_cents: integer(),
     catalog_id: uuid().notNull(),
     compare_at_cents: integer(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     customization: portableJsonb()
       .$type<CatalogCustomizationPolicy>()
       .default({}),
@@ -311,7 +321,7 @@ export const commerceCatalogListings = pgTable(
     status: varchar({ length: 20 }).notNull().default("draft"),
     tags: portableJsonb().$type<string[]>().default([]),
     title: varchar({ length: 240 }),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_listings_catalog_product_idx").on(
@@ -334,7 +344,7 @@ export const commerceCatalogCollections = pgTable(
   "commerce_catalog_collections",
   {
     catalog_id: uuid().notNull(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     description: text(),
     id: uuid().defaultRandom().primaryKey(),
     image_url: varchar({ length: 600 }),
@@ -342,7 +352,7 @@ export const commerceCatalogCollections = pgTable(
     slug: varchar({ length: 180 }).notNull(),
     status: varchar({ length: 20 }).notNull().default("draft"),
     title: varchar({ length: 200 }).notNull(),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_collections_catalog_slug_idx").on(
@@ -384,14 +394,14 @@ export const commercePaymentInstallations = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     label: varchar({ length: 160 }).notNull(),
     owner_key: varchar({ length: 160 }).notNull(),
     provider: varchar({ length: 120 }).notNull(),
     secret_alias: varchar({ length: 120 }).notNull(),
     status: varchar({ length: 20 }).notNull().default("disabled"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     webhook_secret_alias: varchar({ length: 120 }).notNull(),
   },
   (table) => [
@@ -413,7 +423,7 @@ export const commerceCheckoutIntents = pgTable(
     cart: portableJsonb().$type<StorefrontCartLineInput[]>().notNull(),
     catalog_id: uuid().notNull(),
     checkout_result: portableJsonb().$type<CheckoutResult>(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     idempotency_key: varchar({ length: 200 }).notNull(),
     installation_id: uuid().notNull(),
@@ -423,7 +433,7 @@ export const commerceCheckoutIntents = pgTable(
     quote: portableJsonb().$type<StorefrontCartQuote>().notNull(),
     request_digest: varchar({ length: 64 }).notNull(),
     status: varchar({ length: 20 }).notNull().default("creating"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_checkout_intents_owner_idempotency_idx").on(
@@ -444,7 +454,7 @@ export const commerceCheckoutIntents = pgTable(
 export const commercePaymentEvents = pgTable(
   "commerce_payment_events",
   {
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     event: portableJsonb()
       .$type<PaymentWebhookEvent | WebhookEvent>()
       .notNull(),
@@ -466,7 +476,7 @@ export const commercePaymentEvents = pgTable(
 export const commercePaymentWebhookReceipts = pgTable(
   "commerce_payment_webhook_receipts",
   {
-    applied_at: timestamp(),
+    applied_at: timestamp({ withTimezone: true }),
     attempt_count: integer().notNull().default(0),
     event: portableJsonb().$type<PaymentWebhookEvent>().notNull(),
     event_type: varchar({ length: 120 }).notNull(),
@@ -475,10 +485,10 @@ export const commercePaymentWebhookReceipts = pgTable(
     last_error: text(),
     owner_key: varchar({ length: 160 }).notNull(),
     provider_event_id: varchar({ length: 255 }).notNull(),
-    received_at: timestamp().notNull().defaultNow(),
+    received_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     result_status: varchar({ length: 40 }),
     status: varchar({ length: 20 }).notNull().default("received"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_payment_webhook_receipts_installation_event_idx").on(
@@ -497,21 +507,21 @@ export const commercePaymentWebhookConnections = pgTable(
   "commerce_payment_webhook_connections",
   {
     canary_status: varchar({ length: 20 }).notNull().default("unverified"),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     desired_events: portableJsonb().$type<string[]>().notNull(),
     desired_url: varchar({ length: 2048 }).notNull(),
     installation_id: uuid().primaryKey(),
-    incident_acknowledged_at: timestamp(),
+    incident_acknowledged_at: timestamp({ withTimezone: true }),
     incident_kind: varchar({ length: 40 }),
-    incident_opened_at: timestamp(),
-    incident_resolved_at: timestamp(),
+    incident_opened_at: timestamp({ withTimezone: true }),
+    incident_resolved_at: timestamp({ withTimezone: true }),
     incident_status: varchar({ length: 20 }).notNull().default("none"),
-    last_canary_at: timestamp(),
-    last_delivery_at: timestamp(),
+    last_canary_at: timestamp({ withTimezone: true }),
+    last_delivery_at: timestamp({ withTimezone: true }),
     last_error: text(),
-    last_inspected_at: timestamp(),
-    last_reconciled_at: timestamp(),
-    last_repair_at: timestamp(),
+    last_inspected_at: timestamp({ withTimezone: true }),
+    last_reconciled_at: timestamp({ withTimezone: true }),
+    last_repair_at: timestamp({ withTimezone: true }),
     last_repair_status: varchar({ length: 20 }),
     livemode: boolean(),
     max_apply_latency_ms: integer().notNull().default(5_000),
@@ -521,13 +531,15 @@ export const commercePaymentWebhookConnections = pgTable(
     owner_key: varchar({ length: 160 }).notNull(),
     reconciliation_attempt_count: integer().notNull().default(0),
     reconciliation_healthy_count: integer().notNull().default(0),
-    reconciliation_lease_expires_at: timestamp(),
+    reconciliation_lease_expires_at: timestamp({ withTimezone: true }),
     reconciliation_worker_id: varchar({ length: 160 }),
-    next_reconciliation_at: timestamp().notNull().defaultNow(),
+    next_reconciliation_at: timestamp({ withTimezone: true })
+      .notNull()
+      .defaultNow(),
     provider_endpoint_id: varchar({ length: 255 }),
     provider_status: varchar({ length: 20 }),
     status: varchar({ length: 20 }).notNull().default("draft"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     index("commerce_payment_webhook_connections_owner_status_idx").on(
@@ -547,7 +559,7 @@ export const commercePaymentWebhookConnections = pgTable(
 export const commercePaymentWebhookConnectionEvents = pgTable(
   "commerce_payment_webhook_connection_events",
   {
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     installation_id: uuid().notNull(),
     kind: varchar({ length: 40 }).notNull(),
@@ -572,7 +584,7 @@ export const commerceStorefrontOrders = pgTable(
     access_token_hash: varchar({ length: 64 }),
     amount_cents: integer().notNull(),
     catalog_id: uuid().notNull(),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     currency: varchar({ length: 10 }).notNull(),
     customer_email: varchar({ length: 320 }),
     customer_name: varchar({ length: 320 }),
@@ -585,7 +597,7 @@ export const commerceStorefrontOrders = pgTable(
     provider_payment_id: varchar({ length: 255 }),
     shipping: portableJsonb().$type<CheckoutSession["shippingAddress"]>(),
     status: varchar({ length: 40 }).notNull().default("paid"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("commerce_storefront_orders_intent_idx").on(table.intent_id),
@@ -604,21 +616,21 @@ export const commerceStorefrontFulfillmentJobs = pgTable(
   "commerce_storefront_fulfillment_jobs",
   {
     attempts: integer().notNull().default(0),
-    completed_at: timestamp(),
-    created_at: timestamp().notNull().defaultNow(),
+    completed_at: timestamp({ withTimezone: true }),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     installation_id: uuid(),
-    last_attempt_at: timestamp(),
+    last_attempt_at: timestamp({ withTimezone: true }),
     last_error: text(),
-    lease_expires_at: timestamp(),
-    next_attempt_at: timestamp(),
+    lease_expires_at: timestamp({ withTimezone: true }),
+    next_attempt_at: timestamp({ withTimezone: true }),
     order_id: uuid().notNull(),
     payload: portableJsonb().$type<Record<string, unknown>>().notNull(),
     provider_order_id: varchar({ length: 255 }),
     request: portableJsonb().$type<FulfillmentOrderRequest>(),
     result: portableJsonb().$type<FulfillmentOrder>(),
     status: varchar({ length: 20 }).notNull().default("pending"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     worker_id: varchar({ length: 160 }),
   },
   (table) => [
@@ -641,14 +653,14 @@ export const commerceStorefrontOrderActions = pgTable(
   {
     attempts: integer().notNull().default(0),
     case_id: uuid(),
-    completed_at: timestamp(),
-    created_at: timestamp().notNull().defaultNow(),
+    completed_at: timestamp({ withTimezone: true }),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     fulfillment_result: portableJsonb().$type<FulfillmentOrder>(),
     id: uuid().defaultRandom().primaryKey(),
     idempotency_key: varchar({ length: 200 }).notNull(),
     last_error: text(),
-    lease_expires_at: timestamp(),
-    next_attempt_at: timestamp(),
+    lease_expires_at: timestamp({ withTimezone: true }),
+    next_attempt_at: timestamp({ withTimezone: true }),
     order_id: uuid().notNull(),
     owner_key: varchar({ length: 160 }).notNull(),
     payment_refund: portableJsonb().$type<Record<string, unknown>>(),
@@ -657,7 +669,7 @@ export const commerceStorefrontOrderActions = pgTable(
     requested_by: varchar({ length: 200 }).notNull(),
     status: varchar({ length: 30 }).notNull().default("pending"),
     type: varchar({ length: 40 }).notNull().default("cancel_refund"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     worker_id: varchar({ length: 160 }),
   },
   (table) => [
@@ -681,13 +693,13 @@ export const commerceStorefrontOrderEvents = pgTable(
   "commerce_storefront_order_events",
   {
     attempts: integer().notNull().default(0),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     kind: varchar({ length: 50 }).notNull(),
     last_error: text(),
-    lease_expires_at: timestamp(),
-    next_attempt_at: timestamp(),
-    notified_at: timestamp(),
+    lease_expires_at: timestamp({ withTimezone: true }),
+    next_attempt_at: timestamp({ withTimezone: true }),
+    notified_at: timestamp({ withTimezone: true }),
     order_id: uuid().notNull(),
     owner_key: varchar({ length: 160 }).notNull(),
     payload: portableJsonb()
@@ -695,7 +707,7 @@ export const commerceStorefrontOrderEvents = pgTable(
       .notNull()
       .default({}),
     status: varchar({ length: 30 }).notNull().default("pending"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     worker_id: varchar({ length: 160 }),
   },
   (table) => [
@@ -1028,14 +1040,14 @@ export const commerceFulfillmentAccounts = pgTable(
       .$type<Record<string, unknown>>()
       .notNull()
       .default({}),
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     label: varchar({ length: 160 }).notNull(),
     owner_key: varchar({ length: 160 }),
     provider: varchar({ length: 120 }).notNull(),
     secret_alias: varchar({ length: 120 }),
     status: varchar({ length: 20 }).notNull().default("disabled"),
-    updated_at: timestamp().notNull().defaultNow(),
+    updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
     uniqueIndex("fulfillment_accounts_owner_provider_idx").on(
@@ -1072,7 +1084,7 @@ export const commerceFulfillmentVariantMappings = pgTable(
 export const commerceFulfillmentJobs = pgTable("fulfillment_jobs", {
   account_id: uuid().notNull(),
   cost_cents: integer(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   currency: varchar({ length: 10 }),
   error: text(),
   id: uuid().defaultRandom().primaryKey(),
@@ -1083,16 +1095,16 @@ export const commerceFulfillmentJobs = pgTable("fulfillment_jobs", {
   request: portableJsonb().$type<Record<string, unknown>>().notNull(),
   response: portableJsonb().$type<Record<string, unknown>>(),
   status: varchar({ length: 30 }).notNull().default("pending"),
-  updated_at: timestamp().notNull().defaultNow(),
+  updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
 export const commerceFulfillmentEvents = pgTable(
   "fulfillment_events",
   {
-    created_at: timestamp().notNull().defaultNow(),
+    created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
     id: uuid().defaultRandom().primaryKey(),
     job_id: uuid().notNull(),
-    occurred_at: timestamp(),
+    occurred_at: timestamp({ withTimezone: true }),
     payload: portableJsonb().$type<Record<string, unknown>>().notNull(),
     provider_event_id: varchar({ length: 255 }),
     type: varchar({ length: 60 }).notNull(),
@@ -1115,9 +1127,9 @@ export type CommerceInvoiceLine = {
 export const commerceInvoices = pgTable("invoices", {
   amount_cents: integer().notNull().default(0),
   company_id: uuid(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }),
-  due_date: timestamp(),
+  due_date: timestamp({ withTimezone: true }),
   id: uuid().defaultRandom().primaryKey(),
   line_items: portableJsonb().$type<CommerceInvoiceLine[]>().default([]),
   notes: text(),
@@ -1133,8 +1145,8 @@ export const commerceDiscounts = pgTable("discounts", {
   active: boolean().notNull().default(true),
   amount_off: integer(),
   code: varchar({ length: 60 }).primaryKey(),
-  created_at: timestamp().notNull().defaultNow(),
-  expires_at: timestamp(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  expires_at: timestamp({ withTimezone: true }),
   max_uses: integer(),
   percent_off: integer(),
   used_count: integer().notNull().default(0),
@@ -1155,15 +1167,15 @@ export const commerceOrders = pgTable("orders", {
   assignee: varchar({ length: 120 }),
   carrier: varchar({ length: 80 }),
   cart_snapshot: portableJsonb().$type<unknown[]>().default([]),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   currency: varchar({ length: 10 }),
   customer_email: varchar({ length: 320 }),
-  digitized_at: timestamp(),
+  digitized_at: timestamp({ withTimezone: true }),
   digitized_url: varchar({ length: 600 }),
-  due_date: timestamp(),
+  due_date: timestamp({ withTimezone: true }),
   fulfillment: varchar({ length: 20 }),
   label_url: varchar({ length: 600 }),
-  pickup_at: timestamp(),
+  pickup_at: timestamp({ withTimezone: true }),
   line_items: portableJsonb().$type<CommerceOrderLine[]>().default([]),
   payment_status: varchar({ length: 50 }),
   /** Digitized stitch files + cut files, one per design (digitized_url is the legacy single slot). */
@@ -1182,7 +1194,7 @@ export const commerceOrders = pgTable("orders", {
   sewout_status: varchar({ length: 20 }),
   sewout_url: varchar({ length: 600 }),
   session_id: varchar({ length: 255 }).primaryKey(),
-  shipped_at: timestamp(),
+  shipped_at: timestamp({ withTimezone: true }),
   shipping: portableJsonb().$type<CommerceShippingAddress>(),
   spoilage: integer().notNull().default(0),
   status: varchar({ length: 50 }).notNull(),
@@ -1192,7 +1204,7 @@ export const commerceOrders = pgTable("orders", {
 // On-hand blank-garment stock, keyed by product + size + color.
 export const commerceInventory = pgTable("inventory", {
   color: varchar({ length: 60 }).notNull(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   low_threshold: integer().notNull().default(0),
   product_id: varchar({ length: 40 }).notNull(),
@@ -1205,7 +1217,7 @@ export const commerceInventory = pgTable("inventory", {
 export const commerceQuotes = pgTable("quotes", {
   artwork_urls: portableJsonb().$type<string[]>().default([]),
   company: varchar({ length: 200 }),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }).notNull(),
   deadline: varchar({ length: 120 }),
   deposit_amount: integer(),
@@ -1219,14 +1231,14 @@ export const commerceQuotes = pgTable("quotes", {
   quantity: integer(),
   quote_message: text(),
   quoted_amount: integer(),
-  quoted_at: timestamp(),
+  quoted_at: timestamp({ withTimezone: true }),
   status: varchar({ length: 20 }).notNull().default("new"),
 });
 
 // A started-but-unpaid checkout, for abandoned-cart recovery reminders.
 export const commerceAbandonedCarts = pgTable("abandoned_carts", {
   cart: portableJsonb().$type<unknown[]>().notNull(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }).notNull(),
   id: uuid().defaultRandom().primaryKey(),
   recovered: boolean().notNull().default(false),
@@ -1238,7 +1250,7 @@ export const commerceAbandonedCarts = pgTable("abandoned_carts", {
 export const commerceGiftCards = pgTable("gift_cards", {
   balance_cents: integer().notNull(),
   code: varchar({ length: 40 }).primaryKey(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   initial_cents: integer().notNull(),
   recipient_email: varchar({ length: 320 }),
 });
@@ -1250,7 +1262,7 @@ export const commerceGiftCards = pgTable("gift_cards", {
 export const commerceGroupStores = pgTable("group_stores", {
   active: boolean().notNull().default(true),
   cause: varchar({ length: 160 }),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   deadline: varchar({ length: 60 }),
   fundraise_cents: integer().notNull().default(0),
   id: uuid().defaultRandom().primaryKey(),
@@ -1264,7 +1276,7 @@ export const commerceGroupStores = pgTable("group_stores", {
 // A group-gift "chip-in" pool: many contributors fund one custom order. `slug`
 // is the public handle; `raised_cents` accrues as contributions clear.
 export const commerceGiftPools = pgTable("gift_pools", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   deadline: varchar({ length: 60 }),
   id: uuid().defaultRandom().primaryKey(),
   message: text(),
@@ -1282,7 +1294,7 @@ export const commerceGiftContributions = pgTable("gift_contributions", {
   amount_cents: integer().notNull().default(0),
   contributor_email: varchar({ length: 320 }),
   contributor_name: varchar({ length: 160 }),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   message: text(),
   pool_id: uuid().notNull(),
@@ -1291,9 +1303,9 @@ export const commerceGiftContributions = pgTable("gift_contributions", {
 // A recurring membership (e.g. "Stitch Club"), keyed by email. `subscription_id`
 // is the provider's subscription handle; `status` is active | canceled.
 export const commerceMemberships = pgTable("memberships", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   email: varchar({ length: 320 }).primaryKey(),
-  started_at: timestamp(),
+  started_at: timestamp({ withTimezone: true }),
   status: varchar({ length: 20 }).notNull().default("active"),
   subscription_id: varchar({ length: 255 }),
 });
@@ -1302,7 +1314,7 @@ export const commerceMemberships = pgTable("memberships", {
 // referral code. Store credit is delivered as gift cards, so it rides the
 // existing gift-card rails rather than a separate ledger.
 export const commerceLoyalty = pgTable("loyalty", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   email: varchar({ length: 320 }).primaryKey(),
   points: integer().notNull().default(0),
   referral_code: varchar({ length: 20 }).notNull().unique(),
@@ -1313,7 +1325,7 @@ export const commerceLoyalty = pgTable("loyalty", {
 // target the owner's devices vs a specific customer's. `endpoint` is unique.
 export const commercePushSubscriptions = pgTable("push_subscriptions", {
   auth: varchar({ length: 255 }).notNull(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   email: varchar({ length: 320 }),
   endpoint: varchar({ length: 600 }).notNull().unique(),
   id: uuid().defaultRandom().primaryKey(),
@@ -1323,7 +1335,7 @@ export const commercePushSubscriptions = pgTable("push_subscriptions", {
 
 // A finished-work portfolio item for the shop's "our work" gallery.
 export const commerceGalleryItems = pgTable("gallery_items", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   featured: boolean().notNull().default(false),
   id: uuid().defaultRandom().primaryKey(),
   image_url: varchar({ length: 600 }).notNull(),
@@ -1335,7 +1347,7 @@ export const commerceGalleryItems = pgTable("gallery_items", {
 
 // Links a placed order to a group store (written when its checkout clears).
 export const commerceGroupOrders = pgTable("group_orders", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   group_slug: varchar({ length: 80 }).notNull(),
   id: uuid().defaultRandom().primaryKey(),
   order_session_id: varchar({ length: 255 }).notNull(),
@@ -1343,7 +1355,7 @@ export const commerceGroupOrders = pgTable("group_orders", {
 
 // A signed-in customer's favorited products (one row per email+product).
 export const commerceFavorites = pgTable("favorites", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }).notNull(),
   id: uuid().defaultRandom().primaryKey(),
   product_id: varchar({ length: 40 }).notNull(),
@@ -1352,7 +1364,7 @@ export const commerceFavorites = pgTable("favorites", {
 // Return / exchange requests. `kind` is return | exchange; `status` is
 // pending | approved | denied | done.
 export const commerceReturnRequests = pgTable("return_requests", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }).notNull(),
   id: uuid().defaultRandom().primaryKey(),
   kind: varchar({ length: 20 }).notNull(),
@@ -1366,7 +1378,7 @@ export const commerceReturnRequests = pgTable("return_requests", {
 export const commerceReviews = pgTable("reviews", {
   author_name: varchar({ length: 120 }).notNull(),
   body: text().notNull(),
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   order_session_id: varchar({ length: 255 }),
   product_id: varchar({ length: 40 }).notNull(),
@@ -1377,7 +1389,7 @@ export const commerceReviews = pgTable("reviews", {
 
 // A saved customizer design — a re-addable configured cart item.
 export const commerceSavedDesigns = pgTable("saved_designs", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   customer_email: varchar({ length: 320 }).notNull(),
   id: uuid().defaultRandom().primaryKey(),
   label: varchar({ length: 120 }),
@@ -1393,12 +1405,12 @@ export const commercePricingTiers = pgTable("pricing_tiers", {
     .$type<{ min: number; discount: number }[]>()
     .notNull(),
   tier_key: varchar({ length: 80 }).primaryKey(),
-  updated_at: timestamp().notNull().defaultNow(),
+  updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
 // Newsletter subscribers. `email` is the primary key so signups are idempotent.
 export const commerceSubscribers = pgTable("subscribers", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   email: varchar({ length: 320 }).primaryKey(),
 });
 
@@ -1407,7 +1419,7 @@ export const commerceSubscribers = pgTable("subscribers", {
 // placement measurements, puff flags) lives here, written at checkout-session
 // creation and linked to the order by the payment webhook via its spec id.
 export const commerceProductionSpecs = pgTable("production_specs", {
-  created_at: timestamp().notNull().defaultNow(),
+  created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   payload: portableJsonb().$type<Record<string, unknown>>().notNull(),
   session_id: varchar({ length: 255 }),
   spec_id: varchar({ length: 64 }).primaryKey(),
