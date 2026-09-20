@@ -296,6 +296,7 @@ export type InventoryLevel = {
   available: boolean;
   quantity?: number | null;
   updatedAt?: string;
+  transport?: "api" | "file" | "manual";
 };
 
 /** Implemented by supplier adapters such as SanMar or S&S Activewear. */
@@ -316,6 +317,8 @@ export interface CatalogSourceProvider {
     variants: ProductVariant[];
   } | null>;
   getInventory?(skus: string[]): Promise<InventoryLevel[]>;
+  /** Efficient stock lookup for all SKUs of one provider product. */
+  getProductInventory?(externalId: string): Promise<InventoryLevel[]>;
 }
 
 const normalizeKey = (value: string) => value.trim().toLocaleLowerCase();

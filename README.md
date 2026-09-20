@@ -255,3 +255,19 @@ Being lifted from real AbsoluteJS shops next, against the same adapter pattern:
 ## License
 
 BSL-1.1 (converts to Apache-2.0 on the Change Date in `LICENSE`).
+
+### Supplier inventory refresh
+
+`CatalogSourceProvider.getProductInventory(externalId)` optionally supplies all SKU
+stock observations for one product. `refreshSupplierInventory` prefers that lookup
+over `getInventory`, limits concurrent requests, validates SKU identity/timestamps,
+and isolates provider failures. Observations without a source timestamp remain
+unconfirmed. A successful re-download never makes an old file observation fresh.
+
+`refreshCatalogInventory` from `@absolutejs/commerce/drizzle` persists observations
+without touching catalog listings, prices, product presentation, or merchant
+permissions. It shares the catalog-source lease to prevent overlapping refreshes,
+preserves successful observations on partial failures, and records progress/results
+in source settings under `inventoryRefresh`. Use the application's existing sync
+scheduler to invoke it according to an explicit source/account policy. Catalog
+refreshes retain newer dedicated stock observations when the catalog omits stock.

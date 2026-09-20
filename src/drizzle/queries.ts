@@ -768,7 +768,7 @@ export const findOrderForTracking = async (
     .from(commerceOrders)
     .where(
       and(
-        sql`lower(right(${commerceOrders.session_id}, 8)) = ${tail}`,
+        sql`lower(regexp_replace(right(${commerceOrders.session_id}, 8), '[^a-zA-Z0-9]', '', 'g')) = ${tail}`,
         sql`lower(${commerceOrders.customer_email}) = ${email.trim().toLowerCase()}`,
       ),
     )

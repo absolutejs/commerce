@@ -1,3 +1,4 @@
+import { preserveSupplierStock } from "../core/inventoryRefresh";
 import { createHash, randomUUID } from "node:crypto";
 import {
   and,
@@ -144,7 +145,7 @@ const synchronizedVariant = (
   id: catalogSyncIdentity(
     sourceId,
     "variant",
-    variant.externalId ?? variant.id,
+    `${productId}\0${variant.externalId ?? variant.id}`,
   ),
   inventory_policy: variant.inventoryPolicy,
   inventory_quantity: variant.inventoryQuantity,
@@ -355,14 +356,34 @@ export const synchronizeCatalogSource = async (input: {
       const products = page.items.map(({ product }) =>
         synchronizedProduct(input.source.id, generation, seenAt, product),
       );
+      // Older importers used different primary keys. Preserve those keys so listings,
+      // kits and historical order references continue to point at the same records.
+      const existingProducts = products.length
+        ? await input.db
+            .select({
+              id: commerceProducts.id,
+              externalId: commerceProducts.external_id,
+            })
+            .from(commerceProducts)
+            .where(
+              and(
+                eq(commerceProducts.source_id, input.source.id),
+                inArray(
+                  commerceProducts.external_id,
+                  products.map((product) => product.external_id),
+                ),
+              ),
+            )
+        : [];
+      const productIdentities = new Map(
+        existingProducts.map((product) => [product.externalId, product.id]),
+      );
+      for (const product of products)
+        product.id = productIdentities.get(product.external_id) ?? product.id;
       const productIds = new Map(
-        page.items.map(({ product }) => [
+        page.items.map(({ product }, index) => [
           product.id,
-          catalogSyncIdentity(
-            input.source.id,
-            "product",
-            product.externalId ?? product.id,
-          ),
+          products[index]!.id,
         ]),
       );
       const variants = page.items.flatMap(({ product, variants: items }) =>
@@ -376,8 +397,75 @@ export const synchronizeCatalogSource = async (input: {
           ),
         ),
       );
-      await upsertProducts(input.db, products);
-      await upsertVariants(input.db, variants);
+      // Product pages can contain thousands of color/size combinations. Bound both
+      // lookups and writes below PostgreSQL's parameter limit independently of paging.
+      for (let start = 0; start < variants.length; start += 500) {
+        const batch = variants.slice(start, start + 500);
+        const existing = await input.db
+          .select({
+            id: commerceProductVariants.id,
+            productId: commerceProductVariants.product_id,
+            externalId: commerceProductVariants.external_id,
+            metadata: commerceProductVariants.metadata,
+            supplierSku: commerceProductVariants.supplier_sku,
+          })
+          .from(commerceProductVariants)
+          .where(
+            and(
+              inArray(
+                commerceProductVariants.product_id,
+                products.map((product) => product.id),
+              ),
+              inArray(
+                commerceProductVariants.external_id,
+                batch.map((variant) => variant.external_id),
+              ),
+            ),
+          );
+        const identities = new Map(
+          existing.map((variant) => [
+            `${variant.productId}\0${variant.externalId}`,
+            variant.id,
+          ]),
+        );
+        for (const variant of batch) {
+          variant.id =
+            identities.get(`${variant.product_id}\0${variant.external_id}`) ??
+            variant.id;
+          const previous = existing.find((row) => row.id === variant.id);
+          variant.metadata = preserveSupplierStock(
+            previous?.metadata,
+            variant.metadata,
+            input.source.id,
+            variant.supplier_sku,
+          ) as typeof variant.metadata;
+          const stock = (variant.metadata as Record<string, unknown>)
+            .supplierStock as
+            | { available?: boolean | null; quantity?: number | null }
+            | undefined;
+          if (stock && typeof stock.available === "boolean")
+            variant.available = stock.available;
+          if (stock?.quantity != null)
+            variant.inventory_quantity = stock.quantity;
+        }
+      }
+      await input.db.transaction(async (transaction) => {
+        const [lease] = await transaction
+          .select({ id: commerceCatalogSources.id })
+          .from(commerceCatalogSources)
+          .where(
+            and(
+              eq(commerceCatalogSources.id, input.source.id),
+              eq(commerceCatalogSources.sync_generation, generation),
+            ),
+          )
+          .for("update");
+        if (!lease)
+          throw new CatalogSyncError("sync_lease_lost", input.source.id);
+        await upsertProducts(transaction, products);
+        for (let start = 0; start < variants.length; start += 500)
+          await upsertVariants(transaction, variants.slice(start, start + 500));
+      });
       productsSynced += products.length;
       variantsSynced += variants.length;
       const nextCursor = page.nextCursor?.trim() || undefined;
@@ -423,7 +511,11 @@ export const synchronizeCatalogSource = async (input: {
         ),
       input.db
         .update(commerceProductVariants)
-        .set({ available: false, updated_at: completedAt })
+        .set({
+          available: false,
+          updated_at: completedAt,
+          metadata: sql`coalesce(${commerceProductVariants.metadata}, '{}'::jsonb) || '{"catalogRetired":true}'::jsonb`,
+        })
         .where(
           and(
             eq(commerceProductVariants.source_id, input.source.id),

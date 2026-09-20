@@ -1,3 +1,4 @@
+import { addressRequiredFields } from "./address";
 // Manufacturing/drop-ship fulfillment contract. This is intentionally
 // separate from ShippingProvider: a POD provider produces the item and ships
 // it, while a carrier adapter only transports an already-produced parcel.
@@ -199,15 +200,15 @@ export const validateFulfillmentOrder = (
       errors.push({ lineId: line.id, message: "Artwork is required" });
   }
   const address = order.recipient;
+  const required = addressRequiredFields(address.country);
   if (
-    ![
-      address.firstName,
-      address.lastName,
-      address.address1,
-      address.city,
-      address.postalCode,
-      address.country,
-    ].every((value) => value.trim())
+    !required ||
+    ![address.firstName, address.lastName, address.address1].every((value) =>
+      value.trim(),
+    ) ||
+    (required.city && !address.city.trim()) ||
+    (required.state && !address.state?.trim()) ||
+    (required.zip && !address.postalCode.trim())
   )
     errors.push({ message: "A complete recipient address is required" });
 

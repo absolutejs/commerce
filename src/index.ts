@@ -1,3 +1,4 @@
+export * from "./core/address";
 // @absolutejs/commerce — provider-agnostic commerce primitives for AbsoluteJS.
 //
 // Agnostic logic lives here; provider implementations live in the
@@ -23,3 +24,6 @@ export * from "./core/shipping";
 export * from "./core/storefront";
 export * from "./core/terminal";
 export * from "./core/threads";
+export * from "./core/supplierAvailability";
+
+export * from "./core/inventoryRefresh";

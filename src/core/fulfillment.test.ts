@@ -110,3 +110,52 @@ describe("fulfillment cost preflight", () => {
     ]);
   });
 });
+
+describe("country-aware fulfillment addresses", () => {
+  it.each([
+    ["AE", "Dubai", "", "", true],
+    ["IE", "Dublin", "", "", true],
+    ["HK", "", "Hong Kong", "", true],
+    ["HK", "", "", "", false],
+    ["MO", "", "", "", true],
+    ["SG", "", "", "018956", true],
+    ["SG", "", "", "", false],
+    ["GB", "London", "", "SW1A 1AA", true],
+    ["US", "Detroit", "MI", "48201", true],
+    ["US", "Detroit", "", "48201", false],
+    ["US", "Detroit", "MI", "", false],
+    ["CA", "Toronto", "", "M5V 3L9", false],
+    ["ZZ", "Test", "Test", "00000", false],
+    ["XX", "Test", "Test", "00000", false],
+  ])(
+    "validates %s city=%s state=%s postal=%s",
+    (country, city, state, postalCode, valid) => {
+      const input = {
+        ...order,
+        recipient: {
+          ...order.recipient,
+          country: String(country),
+          city: String(city),
+          state: String(state),
+          postalCode: String(postalCode),
+        },
+      };
+      const before = structuredClone(input);
+      expect(validateFulfillmentOrder(input).valid).toBe(valid);
+      expect(input).toEqual(before);
+    },
+  );
+  it("still requires recipient identity and street for postal-optional countries", () => {
+    expect(
+      validateFulfillmentOrder({
+        ...order,
+        recipient: {
+          ...order.recipient,
+          country: "AE",
+          postalCode: "",
+          address1: "",
+        },
+      }).valid,
+    ).toBe(false);
+  });
+});
