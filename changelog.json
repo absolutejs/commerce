@@ -3,6 +3,27 @@
   "name": "@absolutejs/commerce",
   "releases": [
     {
+      "version": "0.40.1-beta.56",
+      "date": "2026-09-21",
+      "changes": [
+        {
+          "kind": "added",
+          "summary": "Refresh stock from an optional complete provider snapshot once per run, preserving timestamps and rejecting ambiguous observations",
+          "symbols": [
+            "CatalogSourceProvider",
+            "refreshSupplierInventory"
+          ]
+        },
+        {
+          "kind": "fixed",
+          "summary": "Preserve staff-verified print areas and verification metadata across catalog sync for the same source and product identity",
+          "symbols": [
+            "synchronizeCatalogSource"
+          ]
+        }
+      ]
+    },
+    {
       "version": "0.40.1-beta.55",
       "date": "2026-09-20",
       "changes": [

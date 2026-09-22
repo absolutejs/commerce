@@ -84,11 +84,30 @@ export const refreshSupplierInventory = async (input: {
     failures: [],
     status: "passed",
   };
-  if (!input.provider.getProductInventory && !input.provider.getInventory)
+  if (
+    !input.provider.getCatalogInventory &&
+    !input.provider.getProductInventory &&
+    !input.provider.getInventory
+  )
     return { ...report, status: "unsupported" };
   const concurrency = input.concurrency ?? 3;
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16)
     throw new RangeError("Inventory concurrency must be between one and 16");
+  // Fetch once per run, not once per worker or product. Never cache across runs.
+  let snapshot: Map<string, InventoryLevel[]> | undefined;
+  if (input.provider.getCatalogInventory) {
+    input.signal?.throwIfAborted();
+    const rows = await input.provider.getCatalogInventory();
+    input.signal?.throwIfAborted();
+    snapshot = new Map();
+    for (const row of rows) {
+      // Keep duplicate observations so validation rejects ambiguous SKU evidence.
+      snapshot.set(row.externalId, [
+        ...(snapshot.get(row.externalId) ?? []),
+        ...row.levels,
+      ]);
+    }
+  }
   let cursor = 0,
     fatal: unknown;
   const worker = async () => {
@@ -99,9 +118,11 @@ export const refreshSupplierInventory = async (input: {
       const wanted = [...new Set(product.skus.filter(Boolean))];
       let levels: InventoryLevel[] = [];
       try {
-        levels = input.provider.getProductInventory
-          ? await input.provider.getProductInventory(product.externalId)
-          : await input.provider.getInventory!(wanted);
+        levels = snapshot
+          ? (snapshot.get(product.externalId) ?? [])
+          : input.provider.getProductInventory
+            ? await input.provider.getProductInventory(product.externalId)
+            : await input.provider.getInventory!(wanted);
       } catch {
         report.failures.push({
           externalId: product.externalId,

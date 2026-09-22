@@ -120,3 +120,80 @@ test("persistence failure is surfaced, not counted as a supplier outage", async 
     }),
   ).rejects.toThrow("database offline");
 });
+
+test("one fresh snapshot per run preserves explicit zeroes, timestamps and ambiguous failures", async () => {
+  let requests = 0;
+  const provider: CatalogSourceProvider = {
+    ...base,
+    getCatalogInventory: async () => {
+      requests++;
+      return [
+        {
+          externalId: "P",
+          levels: [
+            { sku: "retired", available: false, updatedAt: now },
+            { sku: "duplicate", available: true, updatedAt: now },
+            { sku: "duplicate", available: false, updatedAt: now },
+            { sku: "undated", available: true },
+          ],
+        },
+        {
+          externalId: "Q",
+          levels: [{ sku: "live", available: true, updatedAt: now }],
+        },
+      ];
+    },
+    getProductInventory: async () => {
+      throw Error("snapshot must take precedence");
+    },
+  };
+  const input = {
+    provider,
+    sourceId: "s",
+    products: [
+      { externalId: "P", skus: ["retired", "duplicate", "undated", "missing"] },
+      { externalId: "Q", skus: ["live"] },
+    ],
+    persist: async (
+      _id: string,
+      stocks: {
+        observedAt: string | null;
+        available: boolean | null;
+        supplierSku: string;
+      }[],
+    ) => {
+      for (const stock of stocks) {
+        expect(stock.observedAt).toBe(now);
+        expect(stock.available).toBe(stock.supplierSku !== "retired");
+      }
+    },
+  };
+  expect(await refreshSupplierInventory(input)).toMatchObject({
+    variantsUpdated: 2,
+    variantsFailed: 3,
+    status: "partial",
+  });
+  expect(requests).toBe(1);
+  await refreshSupplierInventory(input);
+  expect(requests).toBe(2);
+});
+
+test("failed full snapshot never persists a partial successful page", async () => {
+  let writes = 0;
+  await expect(
+    refreshSupplierInventory({
+      provider: {
+        ...base,
+        getCatalogInventory: async () => {
+          throw Error("snapshot failed");
+        },
+      },
+      sourceId: "s",
+      products: [{ externalId: "p", skus: ["s"] }],
+      persist: async () => {
+        writes++;
+      },
+    }),
+  ).rejects.toThrow("snapshot failed");
+  expect(writes).toBe(0);
+});

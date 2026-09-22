@@ -317,6 +317,10 @@ export interface CatalogSourceProvider {
     variants: ProductVariant[];
   } | null>;
   getInventory?(skus: string[]): Promise<InventoryLevel[]>;
+  /** A fresh, complete stock snapshot for one refresh; timestamps remain provider evidence. */
+  getCatalogInventory?(): Promise<
+    { externalId: string; levels: InventoryLevel[] }[]
+  >;
   /** Efficient stock lookup for all SKUs of one provider product. */
   getProductInventory?(externalId: string): Promise<InventoryLevel[]>;
 }

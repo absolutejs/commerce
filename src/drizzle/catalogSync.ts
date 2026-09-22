@@ -167,6 +167,12 @@ const upsertProducts = async (
   products: ReturnType<typeof synchronizedProduct>[],
 ) => {
   if (products.length === 0) return;
+  // SQL evaluates against the latest row under the conflict lock, preserving
+  // staff edits made while the supplier request was in flight. Approval belongs
+  // to this source/product identity only, never a replacement product.
+  const keepProduction = sql`${commerceProducts.source_id} IS NOT DISTINCT FROM excluded.source_id
+    AND ${commerceProducts.external_id} IS NOT DISTINCT FROM excluded.external_id
+    AND ${commerceProducts.metadata}->'productionFactsVerified' = 'true'::jsonb`;
   await db
     .insert(commerceProducts)
     .values(products)
@@ -175,12 +181,15 @@ const upsertProducts = async (
         attributes: sql`excluded.attributes`,
         brand: sql`excluded.brand`,
         category: sql`excluded.category`,
-        decoration_areas: sql`excluded.decoration_areas`,
+        decoration_areas: sql`CASE WHEN ${keepProduction} THEN ${commerceProducts.decoration_areas} ELSE excluded.decoration_areas END`,
         description: sql`excluded.description`,
         external_id: sql`excluded.external_id`,
         last_seen_at: sql`excluded.last_seen_at`,
         media: sql`excluded.media`,
-        metadata: sql`excluded.metadata`,
+        metadata: sql`CASE WHEN ${keepProduction} THEN excluded.metadata || jsonb_build_object(
+          'productionFactsVerified', true,
+          'verifiedAt', ${commerceProducts.metadata}->'verifiedAt'
+        ) ELSE excluded.metadata END`,
         option_names: sql`excluded.option_names`,
         product_type: sql`excluded.product_type`,
         slug: sql`excluded.slug`,
