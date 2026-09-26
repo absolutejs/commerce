@@ -706,6 +706,8 @@ export type ItemSpec = {
   size: string;
   quantity: number;
   names: string[];
+  /** Where the names are printed (a decoration area's name), when set. */
+  nameLocation?: string;
   fabric: string;
   backing: string;
   placements: PlacementSpec[];
@@ -821,6 +823,8 @@ export type DecorationItemInput = {
   size: string;
   quantity: number;
   names: string[];
+  /** Where the names are printed (a decoration area's name), when set. */
+  nameLocation?: string;
   fabric: string;
   backing: string;
   placements: DecorationPlacementInput[];
@@ -919,6 +923,7 @@ export const buildOrderProductionSpec = (
       method: item.method,
       methodLabel: item.methodLabel,
       names: item.names,
+      ...(item.nameLocation ? { nameLocation: item.nameLocation } : {}),
       placements: item.placements.map((place, placeIndex) =>
         placementSpec(
           item,
@@ -1195,7 +1200,13 @@ export const workOrderMarkdown = (
         : []),
       `- Fabric: ${item.fabric} · Backing: ${item.backing}`,
     );
-    if (item.names.length > 0)
+    // A personalization prints the same text on every piece at a set spot;
+    // a roster prints one name per piece at the lettering defaults.
+    if (item.names.length > 0 && item.nameLocation)
+      lines.push(
+        `- Personalization: "${item.names.join(", ")}" on the ${item.nameLocation} — every piece (qty ${item.quantity})`,
+      );
+    else if (item.names.length > 0)
       lines.push(
         `- Names & numbers (${item.names.length}): ${item.names.join(", ")}`,
         "- Roster lettering defaults: names ~1″ tall across upper back, numbers 6–8″ center back — adjust per order notes",

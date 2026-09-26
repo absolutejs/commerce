@@ -97,6 +97,34 @@ describe("production item identity", () => {
     expect(workOrder).toContain("Nike · NK100 · SKU NK100-NVY-M");
     expect(workOrder).toContain("main / nike-tee / variant-42");
   });
+
+  test("prints a personalization at its location on every piece", () => {
+    const spec = buildOrderProductionSpec(
+      [
+        {
+          backing: "none",
+          fabric: "fleece",
+          garmentColor: { hex: "#111418", name: "Black" },
+          method: "dtg",
+          methodLabel: "DTG",
+          nameLocation: "Left leg",
+          names: ["Alex"],
+          placements: [],
+          product: "Sweatpants",
+          productId: "pants",
+          quantity: 3,
+          size: "M",
+          usesStitchSize: false,
+        },
+      ],
+      "2026-09-26T00:00:00Z",
+    );
+    const workOrder = workOrderMarkdown(spec, "#P1");
+
+    expect(spec.items[0]?.nameLocation).toBe("Left leg");
+    expect(workOrder).toContain('Personalization: "Alex" on the Left leg');
+    expect(workOrder).not.toContain("Roster");
+  });
 });
 
 describe("mixed decoration methods", () => {

@@ -6,6 +6,22 @@
 			"changes": [
 				{
 					"kind": "added",
+					"summary": "Production specs carry where names are printed: ItemSpec and DecorationItemInput take an optional nameLocation, and the work order prints a personalization as one line at that location on every piece instead of roster lettering.",
+					"symbols": [
+						"ItemSpec",
+						"DecorationItemInput",
+						"buildOrderProductionSpec",
+						"workOrderMarkdown"
+					]
+				}
+			],
+			"date": "2026-09-26",
+			"version": "0.40.1-beta.58"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
 					"summary": "Record a business account's billing contact, phone, accounts-payable email, billing address and tax ID for invoicing",
 					"symbols": [
 						"commerceCompanies",
