@@ -21,8 +21,14 @@ export type SupplierStockDecision = {
   state: "available" | "unavailable" | "unknown" | "stale";
   purchasable: boolean;
   reviewRequired: boolean;
-  reason: "merchant-paused" | "supplier-unavailable" | "insufficient-stock" |
-    "observation-missing" | "freshness-policy-missing" | "observation-stale" | null;
+  reason:
+    | "merchant-paused"
+    | "supplier-unavailable"
+    | "insufficient-stock"
+    | "observation-missing"
+    | "freshness-policy-missing"
+    | "observation-stale"
+    | null;
 };
 
 /** Pure evaluation: fetching/retries belong to adapters and the sync runtime. */
@@ -40,25 +46,39 @@ export const evaluateSupplierStock = (input: {
     throw new RangeError("Stock freshness must be a positive duration");
   const observation = input.observation;
   const now = input.now ?? Date.now();
-  const observedAt = observation?.observedAt ? Date.parse(observation.observedAt) : NaN;
-  const hasEvidence = observation &&
+  const observedAt = observation?.observedAt
+    ? Date.parse(observation.observedAt)
+    : NaN;
+  const hasEvidence =
+    observation &&
     (typeof observation.available === "boolean" ||
-      (typeof observation.quantity === "number" && Number.isFinite(observation.quantity) && observation.quantity >= 0));
+      (typeof observation.quantity === "number" &&
+        Number.isFinite(observation.quantity) &&
+        observation.quantity >= 0));
   let state: SupplierStockDecision["state"] = "unknown";
   let reason: SupplierStockDecision["reason"] = "observation-missing";
   if (hasEvidence && Number.isFinite(observedAt) && observedAt <= now) {
     if (maxAge === undefined) {
-      if (observation.available === false) {state = "unavailable"; reason = "supplier-unavailable";}
-      else if (typeof observation.quantity === "number" && observation.quantity < input.quantity) {state = "unavailable"; reason = "insufficient-stock";}
-      else reason = "freshness-policy-missing";
-    }
-    else if (now - observedAt >= maxAge) {
+      if (observation.available === false) {
+        state = "unavailable";
+        reason = "supplier-unavailable";
+      } else if (
+        typeof observation.quantity === "number" &&
+        observation.quantity < input.quantity
+      ) {
+        state = "unavailable";
+        reason = "insufficient-stock";
+      } else reason = "freshness-policy-missing";
+    } else if (now - observedAt >= maxAge) {
       state = "stale";
       reason = "observation-stale";
     } else if (observation.available === false) {
       state = "unavailable";
       reason = "supplier-unavailable";
-    } else if (typeof observation.quantity === "number" && observation.quantity < input.quantity) {
+    } else if (
+      typeof observation.quantity === "number" &&
+      observation.quantity < input.quantity
+    ) {
       state = "unavailable";
       reason = "insufficient-stock";
     } else {
@@ -70,7 +90,13 @@ export const evaluateSupplierStock = (input: {
   return {
     state,
     reason: input.saleEnabled ? reason : "merchant-paused",
-    purchasable: input.saleEnabled && (state === "available" || (uncertain && input.policy.uncertain === "allow-review")),
-    reviewRequired: input.saleEnabled && uncertain && input.policy.uncertain === "allow-review",
+    purchasable:
+      input.saleEnabled &&
+      (state === "available" ||
+        (uncertain && input.policy.uncertain === "allow-review")),
+    reviewRequired:
+      input.saleEnabled &&
+      uncertain &&
+      input.policy.uncertain === "allow-review",
   };
 };

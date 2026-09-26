@@ -98,10 +98,26 @@ export const commerceDesigns = pgTable("designs", {
 
 // A B2B company account: net terms, tax-exempt status, PO requirement, and a
 // brand kit (saved logo URLs) for fast reorders.
+/** Where a business account is invoiced. */
+export type CompanyBillingAddress = {
+  line1: string;
+  line2?: string;
+  city: string;
+  state?: string;
+  postalCode: string;
+  /** ISO 3166-1 alpha-2. */
+  country: string;
+};
+
 export const commerceCompanies = pgTable("companies", {
+  /** Where invoices are sent when it differs from the main contact. */
+  ap_email: varchar({ length: 320 }),
+  billing_address: portableJsonb().$type<CompanyBillingAddress>(),
   brand_kit: portableJsonb().$type<BrandKit>(),
   brand_logos: portableJsonb().$type<string[]>().default([]),
   contact_email: varchar({ length: 320 }),
+  contact_name: varchar({ length: 160 }),
+  contact_phone: varchar({ length: 40 }),
   created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   id: uuid().defaultRandom().primaryKey(),
   name: varchar({ length: 200 }).notNull(),
@@ -110,6 +126,8 @@ export const commerceCompanies = pgTable("companies", {
   po_required: boolean().notNull().default(false),
   tax_exempt: boolean().notNull().default(false),
   tax_exempt_id: varchar({ length: 80 }),
+  /** The business's own tax ID (e.g. US EIN), printed on invoices. */
+  tax_id: varchar({ length: 40 }),
 });
 
 // A storefront/tenant catalog. Canonical products may be listed in any number

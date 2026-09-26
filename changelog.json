@@ -1,137 +1,156 @@
 {
-  "contract": 1,
-  "name": "@absolutejs/commerce",
-  "releases": [
-    {
-      "version": "0.40.1-beta.56",
-      "date": "2026-09-21",
-      "changes": [
-        {
-          "kind": "added",
-          "summary": "Refresh stock from an optional complete provider snapshot once per run, preserving timestamps and rejecting ambiguous observations",
-          "symbols": [
-            "CatalogSourceProvider",
-            "refreshSupplierInventory"
-          ]
-        },
-        {
-          "kind": "fixed",
-          "summary": "Preserve staff-verified print areas and verification metadata across catalog sync for the same source and product identity",
-          "symbols": [
-            "synchronizeCatalogSource"
-          ]
-        }
-      ]
-    },
-    {
-      "version": "0.40.1-beta.55",
-      "date": "2026-09-20",
-      "changes": [
-        {
-          "kind": "added",
-          "summary": "Refresh supplier inventory independently of catalog content with product-level lookups, bounded concurrency, partial failure reporting, shared source leases and preserved observation timestamps",
-          "symbols": [
-            "refreshSupplierInventory",
-            "refreshCatalogInventory",
-            "inventoryObservation",
-            "preserveSupplierStock"
-          ]
-        },
-        {
-          "kind": "changed",
-          "summary": "Add optional product inventory lookup and observation transport to provider contracts",
-          "symbols": [
-            "InventoryLevel",
-            "CatalogSourceProvider"
-          ]
-        },
-        {
-          "kind": "fixed",
-          "summary": "Ship supplier stock evidence evaluation and preserve stock observations during catalog refreshes",
-          "symbols": [
-            "evaluateSupplierStock",
-            "synchronizeCatalogSource"
-          ]
-        },
-        {
-          "kind": "changed",
-          "summary": "Regenerate inferred return declarations with reordered object members; runtime and structural types are unchanged",
-          "symbols": [
-            "createReview",
-            "createInvoice",
-            "createGiftPool",
-            "upsertMembership",
-            "createReturnRequest",
-            "createCatalog",
-            "upsertCatalogProduct",
-            "createCatalogListing",
-            "createCatalogCollection",
-            "offerCatalogProduct",
-            "createStorefrontMerchandisingService",
-            "createStorefrontPaymentService",
-            "createStorefrontAftercareEvidenceService",
-            "emitStorefrontOrderEvent",
-            "createStorefrontOrderService",
-            "emitStorefrontCaseEvent",
-            "createStorefrontAftercareService",
-            "recordStorefrontDispute"
-          ]
-        }
-      ]
-    },
-    {
-      "changes": [
-        {
-          "kind": "fixed",
-          "summary": "Match displayed order references containing punctuation while retaining the buyer email requirement",
-          "symbols": [
-            "findOrderForTracking"
-          ]
-        }
-      ],
-      "date": "2026-09-14",
-      "version": "0.40.1-beta.54"
-    },
-    {
-      "changes": [
-        {
-          "kind": "fixed",
-          "summary": "Apply shared country address requirements to fulfillment without fabricated region or postal values, retaining required US state and ZIP validation",
-          "symbols": [
-            "validateFulfillmentOrder",
-            "addressRequiredFields",
-            "supportedAddressCountries"
-          ]
-        }
-      ],
-      "date": "2026-09-11",
-      "version": "0.40.1-beta.53"
-    },
-    {
-      "changes": [
-        {
-          "kind": "fixed",
-          "summary": "Refresh legacy variants whose source metadata is missing, preserving product-scoped variant identities",
-          "symbols": [
-            "synchronizeCatalogSource"
-          ]
-        }
-      ],
-      "date": "2026-09-10",
-      "version": "0.40.1-beta.52"
-    },
-    {
-      "changes": [
-        {
-          "kind": "fixed",
-          "summary": "Catalog refresh preserves existing product and variant identities and batches variant writes atomically",
-          "symbols": [
-            "synchronizeCatalogSource"
-          ]
-        }
-      ],
-      "date": "2026-09-10",
-      "version": "0.40.1-beta.51"
-    }
-  ]
+	"contract": 1,
+	"name": "@absolutejs/commerce",
+	"releases": [
+		{
+			"changes": [
+				{
+					"kind": "added",
+					"summary": "Record a business account's billing contact, phone, accounts-payable email, billing address and tax ID for invoicing",
+					"symbols": [
+						"commerceCompanies",
+						"CompanyBillingAddress",
+						"commerceDrizzleSchema",
+						"createCompany",
+						"listCompanies",
+						"getCompany",
+						"updateCompany"
+					]
+				}
+			],
+			"date": "2026-09-26",
+			"version": "0.40.1-beta.57"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
+					"summary": "Refresh stock from an optional complete provider snapshot once per run, preserving timestamps and rejecting ambiguous observations",
+					"symbols": [
+						"CatalogSourceProvider",
+						"refreshSupplierInventory"
+					]
+				},
+				{
+					"kind": "fixed",
+					"summary": "Preserve staff-verified print areas and verification metadata across catalog sync for the same source and product identity",
+					"symbols": [
+						"synchronizeCatalogSource"
+					]
+				}
+			],
+			"date": "2026-09-21",
+			"version": "0.40.1-beta.56"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
+					"summary": "Refresh supplier inventory independently of catalog content with product-level lookups, bounded concurrency, partial failure reporting, shared source leases and preserved observation timestamps",
+					"symbols": [
+						"refreshSupplierInventory",
+						"refreshCatalogInventory",
+						"inventoryObservation",
+						"preserveSupplierStock"
+					]
+				},
+				{
+					"kind": "changed",
+					"summary": "Add optional product inventory lookup and observation transport to provider contracts",
+					"symbols": [
+						"InventoryLevel",
+						"CatalogSourceProvider"
+					]
+				},
+				{
+					"kind": "fixed",
+					"summary": "Ship supplier stock evidence evaluation and preserve stock observations during catalog refreshes",
+					"symbols": [
+						"evaluateSupplierStock",
+						"synchronizeCatalogSource"
+					]
+				},
+				{
+					"kind": "changed",
+					"summary": "Regenerate inferred return declarations with reordered object members; runtime and structural types are unchanged",
+					"symbols": [
+						"createReview",
+						"createInvoice",
+						"createGiftPool",
+						"upsertMembership",
+						"createReturnRequest",
+						"createCatalog",
+						"upsertCatalogProduct",
+						"createCatalogListing",
+						"createCatalogCollection",
+						"offerCatalogProduct",
+						"createStorefrontMerchandisingService",
+						"createStorefrontPaymentService",
+						"createStorefrontAftercareEvidenceService",
+						"emitStorefrontOrderEvent",
+						"createStorefrontOrderService",
+						"emitStorefrontCaseEvent",
+						"createStorefrontAftercareService",
+						"recordStorefrontDispute"
+					]
+				}
+			],
+			"date": "2026-09-20",
+			"version": "0.40.1-beta.55"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
+					"summary": "Match displayed order references containing punctuation while retaining the buyer email requirement",
+					"symbols": [
+						"findOrderForTracking"
+					]
+				}
+			],
+			"date": "2026-09-14",
+			"version": "0.40.1-beta.54"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
+					"summary": "Apply shared country address requirements to fulfillment without fabricated region or postal values, retaining required US state and ZIP validation",
+					"symbols": [
+						"validateFulfillmentOrder",
+						"addressRequiredFields",
+						"supportedAddressCountries"
+					]
+				}
+			],
+			"date": "2026-09-11",
+			"version": "0.40.1-beta.53"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
+					"summary": "Refresh legacy variants whose source metadata is missing, preserving product-scoped variant identities",
+					"symbols": [
+						"synchronizeCatalogSource"
+					]
+				}
+			],
+			"date": "2026-09-10",
+			"version": "0.40.1-beta.52"
+		},
+		{
+			"changes": [
+				{
+					"kind": "fixed",
+					"summary": "Catalog refresh preserves existing product and variant identities and batches variant writes atomically",
+					"symbols": [
+						"synchronizeCatalogSource"
+					]
+				}
+			],
+			"date": "2026-09-10",
+			"version": "0.40.1-beta.51"
+		}
+	]
 }
