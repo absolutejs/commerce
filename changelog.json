@@ -6,6 +6,26 @@
 			"changes": [
 				{
 					"kind": "added",
+					"summary": "Record marketing consent on subscribers: consented_at, source and unsubscribed_at columns, subscribe() with a source that renews consent after an opt-out, unsubscribe() that keeps the row, listActiveSubscribers() and isSubscribed()",
+					"symbols": [
+						"commerceSubscribers",
+						"commerceDrizzleSchema",
+						"Subscriber",
+						"subscribe",
+						"unsubscribe",
+						"listSubscribers",
+						"listActiveSubscribers",
+						"isSubscribed"
+					]
+				}
+			],
+			"date": "2026-09-29",
+			"version": "0.40.1-beta.59"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
 					"summary": "Production specs carry where names are printed: ItemSpec and DecorationItemInput take an optional nameLocation, and the work order prints a personalization as one line at that location on every piece instead of roster lettering.",
 					"symbols": [
 						"ItemSpec",

@@ -2,7 +2,7 @@
 // instance (Postgres) as the first arg, so they work with whatever connection
 // the host app already has. drizzle-orm is a peer dependency.
 
-import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, sql } from "drizzle-orm";
 import type { PgAsyncDatabase } from "drizzle-orm/pg-core";
 import {
   commerceAbandonedCarts,
@@ -799,17 +799,62 @@ export const setReturnStatus = async (
 
 // ---- Newsletter ----
 
+export type Subscriber = typeof commerceSubscribers.$inferSelect;
+
+// Every consent record, opted-out rows included, newest first.
 export const listSubscribers = (db: CommerceDb) =>
   db
     .select()
     .from(commerceSubscribers)
     .orderBy(desc(commerceSubscribers.created_at));
 
-export const subscribe = async (db: CommerceDb, email: string) => {
+// Only the people who may be sent marketing right now.
+export const listActiveSubscribers = (db: CommerceDb) =>
+  db
+    .select()
+    .from(commerceSubscribers)
+    .where(isNull(commerceSubscribers.unsubscribed_at))
+    .orderBy(desc(commerceSubscribers.created_at));
+
+export const isSubscribed = (subscriber: Subscriber | null | undefined) =>
+  Boolean(subscriber && !subscriber.unsubscribed_at);
+
+// Records (or renews) marketing consent. Subscribing after an opt-out clears
+// the opt-out, since it is a fresh, explicit yes.
+export const subscribe = async (
+  db: CommerceDb,
+  email: string,
+  options: { source?: string } = {},
+) => {
+  const now = new Date();
+  const source = options.source ?? "newsletter";
   await db
     .insert(commerceSubscribers)
-    .values({ email: email.trim().toLowerCase() })
-    .onConflictDoNothing();
+    .values({
+      consented_at: now,
+      email: email.trim().toLowerCase(),
+      source,
+    })
+    .onConflictDoUpdate({
+      set: { consented_at: now, source, unsubscribed_at: null },
+      target: commerceSubscribers.email,
+    });
+};
+
+// Records an opt-out. Kept as a row so a later import or checkout cannot
+// silently re-add someone who said no — only a new explicit subscribe can.
+export const unsubscribe = async (db: CommerceDb, email: string) => {
+  const now = new Date();
+  await db
+    .insert(commerceSubscribers)
+    .values({
+      email: email.trim().toLowerCase(),
+      unsubscribed_at: now,
+    })
+    .onConflictDoUpdate({
+      set: { unsubscribed_at: now },
+      target: commerceSubscribers.email,
+    });
 };
 
 // ---- Abandoned carts ----

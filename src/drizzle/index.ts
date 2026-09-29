@@ -1426,10 +1426,17 @@ export const commercePricingTiers = pgTable("pricing_tiers", {
   updated_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 
-// Newsletter subscribers. `email` is the primary key so signups are idempotent.
+// Newsletter subscribers — the marketing-consent record. `email` is the
+// primary key so signups are idempotent. A row with `unsubscribed_at` set is
+// kept (not deleted) so an opt-out is remembered and auditable; subscribing
+// again clears it and restamps `consented_at`.
 export const commerceSubscribers = pgTable("subscribers", {
+  consented_at: timestamp({ withTimezone: true }),
   created_at: timestamp({ withTimezone: true }).notNull().defaultNow(),
   email: varchar({ length: 320 }).primaryKey(),
+  // Where the consent was given ('newsletter' | 'checkout' | 'account' | …).
+  source: varchar({ length: 40 }),
+  unsubscribed_at: timestamp({ withTimezone: true }),
 });
 
 // Full machine-readable production spec per checkout (decoration shops) —
