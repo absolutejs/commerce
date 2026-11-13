@@ -66,11 +66,15 @@ export type CheckoutTaxAddress = {
 export type CreateCheckoutInput = {
   /** Stable host-owned retry identity forwarded to capable providers. */
   idempotencyKey?: string;
-  uiMode: "embedded" | "hosted";
+  /** `embedded`: the provider's whole page in a frame. `elements`: the
+   *  host builds the page from the provider's UI components (Stripe
+   *  Elements on a Checkout Session) and keeps its own layout. `hosted`:
+   *  a redirect to the provider. */
+  uiMode: "embedded" | "elements" | "hosted";
   currency?: string;
   lineItems: CheckoutLineItem[];
   metadata?: Record<string, string>;
-  /** Embedded checkout return URL. */
+  /** Embedded / elements checkout return URL. */
   returnUrl?: string;
   /** Hosted checkout success/cancel URLs. */
   successUrl?: string;

@@ -6,6 +6,19 @@
 			"changes": [
 				{
 					"kind": "added",
+					"summary": "CreateCheckoutInput.uiMode accepts 'elements': the host builds checkout from the provider's UI components (Stripe Elements on a Checkout Session)",
+					"symbols": [
+						"CreateCheckoutInput"
+					]
+				}
+			],
+			"date": "2026-11-13",
+			"version": "0.40.1-beta.61"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
 					"summary": "renderTextDesign takes an optional outline (color + width), letterSpacing and arc, so customizer text can be outlined, tracked and curved like a rainbow or a smile; the three-field call renders exactly as before",
 					"symbols": [
 						"renderTextDesign",
