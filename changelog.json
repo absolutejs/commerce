@@ -6,6 +6,21 @@
 			"changes": [
 				{
 					"kind": "added",
+					"summary": "renderTextDesign takes an optional outline (color + width), letterSpacing and arc, so customizer text can be outlined, tracked and curved like a rainbow or a smile; the three-field call renders exactly as before",
+					"symbols": [
+						"renderTextDesign",
+						"TextDesign",
+						"TextOutline"
+					]
+				}
+			],
+			"date": "2026-11-13",
+			"version": "0.40.1-beta.60"
+		},
+		{
+			"changes": [
+				{
+					"kind": "added",
 					"summary": "Record marketing consent on subscribers: consented_at, source and unsubscribed_at columns, subscribe() with a source that renews consent after an opt-out, unsubscribe() that keeps the row, listActiveSubscribers() and isSubscribed()",
 					"symbols": [
 						"commerceSubscribers",
